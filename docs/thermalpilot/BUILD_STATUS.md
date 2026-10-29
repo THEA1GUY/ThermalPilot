@@ -18,6 +18,9 @@ Planning and repository preparation are complete. No ThermalPilot application fe
 - Identified the laptop/CPU/GPU through read-only inventory.
 - Recorded the .NET SDK gap, build/launch lifecycle effects and unresolved hardware capabilities.
 - Wrote the implementation plan, source audit and project instructions.
+- Pushed the planning documents on codex/implementation-plan; verified the remote branch at initial planning commit de982e5d5774636757179323356afce6c18b03c1.
+- Opened [draft planning PR #1](https://github.com/THEA1GUY/ThermalPilot/pull/1) for owner review. No merge or application implementation has been performed.
+- Validation passed: relative Markdown links, 13 checkpoint definitions, 25 traced requirements and git diff whitespace checks. These are documentation checks, not application acceptance.
 
 ## Checkpoints
 
