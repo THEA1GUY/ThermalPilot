@@ -47,7 +47,9 @@ After baseline compilation, the same controller process/start time remained acti
 | Focused build/scripts and C# reviews | No actionable findings |
 | Relative doc links/whitespace | Checked before commit |
 
-A repeat build from the dedicated checkout and remote CI status are recorded in BUILD_STATUS when verified. Do not infer their result from this initial working-checkout build.
+Repeated the locked restore, Release/win-x64 build, publish and both metadata checks from the permanent dedicated checkout: passed, zero warnings/errors. The live controller/config and relevant service states still matched the before snapshot afterward.
+
+[Remote GitHub Actions](https://github.com/THEA1GUY/ThermalPilot/actions/runs/40988050307) passed for source commit 7bee316c5258df22e36ee47c9863b512d04a48bc. See [BUILD_STATUS](BUILD_STATUS.md) and [draft PR #2](https://github.com/THEA1GUY/ThermalPilot/pull/2) for the review/resume point. Final documentation-only commits do not change the reviewed baseline code.
 
 ## Design evidence
 

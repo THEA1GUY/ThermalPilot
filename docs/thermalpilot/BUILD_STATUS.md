@@ -4,7 +4,7 @@ Updated: 30 October 2026, Africa/Lagos.
 
 ## Resume point
 
-**Current checkpoint: TP-00 — final checkout/review validation in progress. Next implementation gate: TP-01 after owner review.**
+**TP-00 completed; awaiting owner review. Next checkpoint: TP-01 — local host, shared contracts and persistent storage.**
 
 The owner approved the plan and TP-00. The inherited application now builds/publishes with an inert entry point. No runtime hub features are implemented, and no application executable, live sensor sampling, benchmark, profile change, schedule execution or cloud-agent invocation has been run.
 
@@ -26,7 +26,7 @@ The owner approved the plan and TP-00. The inherited application now builds/publ
 
 | ID | Status | Evidence / next gate |
 |---|---|---|
-| TP-00 | Final validation in progress | Pinned toolchain, inert build/publish and reviews passed; dedicated checkout repeat and remote verification next |
+| TP-00 | Completed; owner review pending | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
 | TP-01 | Not started | Persistent local host and shared contracts |
 | TP-02 | Not started | Read-only bridge and reliable telemetry |
 | TP-03 | Not started | Desktop/paired-phone dashboard |
@@ -58,11 +58,19 @@ See [TP-00-EVIDENCE.md](TP-00-EVIDENCE.md), [BUILD_GUIDE.md](BUILD_GUIDE.md), [A
 
 Passed locally: SDK archive verification; locked restore; Release/win-x64 build with zero warnings/errors; framework-dependent publish; inert-entry-point inspection of build and publish outputs; negative native-file rejection; targeted C# formatting; PowerShell/XML/JSON parsing; links/whitespace; two focused reviews. The live G-Helper process and config checksum matched the before snapshot.
 
+Repeated the locked build/publish and both metadata checks in the permanent dedicated checkout: passed with zero warnings/errors. Final controller/config and relevant ASUS service states still matched the initial inventory.
+
+Source checkpoint commit: 7bee316c5258df22e36ee47c9863b512d04a48bc, pushed to origin/codex/tp-00-baseline. [GitHub Actions build](https://github.com/THEA1GUY/ThermalPilot/actions/runs/40988050307) passed for that commit. [Draft TP-00 PR #2](https://github.com/THEA1GUY/ThermalPilot/pull/2) is stacked on [planning PR #1](https://github.com/THEA1GUY/ThermalPilot/pull/1). Neither PR has been merged and no release has been created.
+
 Dependency metadata gaps for HidSharpCore/NvAPIWrapper and embedded-module provenance remain release follow-up tasks, not false clearance claims.
 
 ## Checkout
 
-Permanent dedicated checkout: C:/Users/Asus/OneDrive/Documents/ChatGPT/ThermalPilot. Its own root and fork/upstream remotes are verified. Initial TP-00 edits/build ran in the separate planning checkout; the committed phase will be checked out and rebuilt at the permanent location before completion. Quickone remains untouched.
+Permanent dedicated checkout: C:/Users/Asus/OneDrive/Documents/ChatGPT/ThermalPilot. Its own root and fork/upstream remotes are verified. The pushed TP-00 branch is checked out there and its locked build/publish was repeated successfully. Quickone remains untouched.
+
+## Next owner gate
+
+Review TP-00/PR #2 before approving TP-01. TP-01 builds the fake-backed local host/contracts/SQLite slice and persistence evidence; it does not enable hardware writes, phone networking or cloud agents. Do not implement later phases unattended.
 
 ## Completion record for future phases
 

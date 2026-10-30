@@ -2,7 +2,7 @@
 
 A personal PC monitoring, profiles and automation hub being developed from [G-Helper](https://github.com/seerge/g-helper).
 
-**Status: TP-00 baseline preparation.** The inherited application compiles with an inert ThermalPilot entry point. The dashboard, phone access, MCP server and DeepSeek agents have not been implemented. No performance improvement is claimed.
+**Status: TP-00 completed, awaiting owner review.** The inherited application builds/publishes with an inert ThermalPilot entry point, locally and in CI. TP-01 is next. The dashboard, phone access, MCP server and DeepSeek agents have not been implemented. No performance improvement is claimed.
 
 ## Intended experience
 
