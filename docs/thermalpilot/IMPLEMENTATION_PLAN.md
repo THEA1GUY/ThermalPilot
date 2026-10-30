@@ -1,7 +1,7 @@
 # ThermalPilot implementation plan
 
 Date: 30 October 2026, Africa/Lagos.
-Status: proposed implementation plan; repository/source preparation completed.
+Status: owner approved the plan and TP-00 on 30 October 2026. Later checkpoints still require their own owner review/approval. See BUILD_STATUS.md for execution progress.
 Owner repository: [THEA1GUY/ThermalPilot](https://github.com/THEA1GUY/ThermalPilot).
 Source baseline: [seerge/g-helper at 0a1538a](https://github.com/seerge/g-helper/tree/0a1538ac4fb0337f6cf3d64a907acde10c91a3d9).
 
@@ -43,15 +43,15 @@ The local preparation clone is shallow; fetch more history when needed. The GitH
 | D-01 | Renamed G-Helper fork, project name ThermalPilot | Selected under owner's instruction; fork created |
 | D-02 | DeepSeek cloud API with minimal telemetry | Confirmed by owner |
 | D-03 | Phone access to the same hub/state | Confirmed by owner |
-| D-04 | Windows host, single owner, one laptop initially; local SQLite | Proposed; approve with plan |
-| D-05 | .NET 10 C# hub/bridge, ASP.NET Core local API, React + strict TypeScript UI | Proposed to minimise language/runtime mismatch; lock packages in TP-00/01 |
-| D-06 | Narrow in-process G-Helper bridge rather than an initial hardware rewrite | Preferred; must pass TP-00/02 feasibility gates |
-| D-07 | Paired phone over local network first, authenticated HTTPS; away-from-home access deferred | Proposed; settle certificate/trust onboarding in TP-03 |
-| D-08 | Background host and bridge run at user sign-in initially; no pre-login execution guarantee | Proposed; settle lifecycle in TP-00; service extraction only if required |
-| D-09 | Start in Observe; enable Recommend and bounded Automatic separately | Proposed; owner selects allowed actions in TP-04/06/08 |
-| D-10 | Raw retention, aggregates, report retention, API spending/rate limits | Pending; choose before production collection/cloud calls; no unlimited defaults |
+| D-04 | Windows host, single owner, one laptop initially; local SQLite | Accepted with plan approval |
+| D-05 | .NET 10 C# hub/bridge, ASP.NET Core local API, React + strict TypeScript UI | Accepted direction; SDK pinned in TP-00; future host/UI packages selected at their checkpoint |
+| D-06 | Narrow in-process G-Helper bridge rather than an initial hardware rewrite | Accepted direction in ADR-001; actual read-only extraction/writer coordination remain TP-02/04 gates |
+| D-07 | Paired phone over local network first, authenticated HTTPS; away-from-home access deferred | Accepted direction; certificate/trust onboarding remains TP-03 |
+| D-08 | Background host and bridge run at user sign-in initially; no pre-login execution guarantee | Accepted lifecycle in ADR-001 |
+| D-09 | Start in Observe; enable Recommend and bounded Automatic separately | Accepted design; no runtime action permissions enabled by approval |
+| D-10 | Raw retention, aggregates, report retention, API spending/rate limits | ADR-001 records disabled collection/cloud now and bounded retention proposals to verify before enabling collection |
 | D-11 | Exact DeepSeek model, credentials and notification channels | Pending TP-08; select from current official docs/account availability |
-| D-12 | Permanent standalone project folder and GitHub PR workflow | Pending TP-00; planning checkout is already separate from Quickone |
+| D-12 | Permanent standalone project folder and GitHub PR workflow | Documents/ChatGPT/ThermalPilot; own repo; codex/ phase branches with pushed evidence and owner review |
 
 Hardware target observed: ASUS ROG Zephyrus G15 GA503RM; AMD Ryzen 9 6900HS; NVIDIA RTX 3060 Laptop GPU plus AMD integrated graphics. Do not infer MUX, undervolting, fan, power or telemetry support solely from those names.
 
@@ -345,6 +345,6 @@ Total complexity: large, with hardware integration and recovery dominating uncer
 
 ## 11. Initial approval and next step
 
-The requested planning/source/fork preparation is complete. Implementation begins only after owner confirmation of this plan and its initial proposed decisions.
+The owner approved this plan and starting TP-00 on 30 October 2026. See BUILD_STATUS.md for its evidence and next review gate.
 
-Approve TP-00 first. That phase prepares the development environment and proves the integration approach; it does not authorise all later checkpoints, automatic tuning, live cloud credentials, or a public release.
+That approval does not authorise all later checkpoints, automatic tuning, live cloud credentials or a public release. After TP-00 review, approve TP-01 separately.

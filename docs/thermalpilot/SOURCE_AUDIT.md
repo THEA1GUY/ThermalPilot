@@ -2,6 +2,8 @@
 
 Date: 30 October 2026, Africa/Lagos.
 
+This is the historical upstream inspection captured before TP-00. For the fork's current build/toolchain changes and observations, see [TP-00 evidence](TP-00-EVIDENCE.md), [build guide](BUILD_GUIDE.md) and [ADR-001](ADR-001-HOST-AND-BRIDGE.md). Pinned source links below describe the upstream baseline, not the modified fork.
+
 ## Identity and evidence boundary
 
 - Upstream: https://github.com/seerge/g-helper

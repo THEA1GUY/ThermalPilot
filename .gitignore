@@ -369,3 +369,8 @@ FodyWeavers.xsd
 
 tools/
 app/*.lscache
+
+# ThermalPilot local toolchains and private build evidence
+.tools/
+.private/
+artifacts/

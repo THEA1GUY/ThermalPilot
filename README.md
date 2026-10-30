@@ -2,7 +2,7 @@
 
 A personal PC monitoring, profiles and automation hub being developed from [G-Helper](https://github.com/seerge/g-helper).
 
-**Status: planning.** This fork currently contains upstream G-Helper and a source-grounded implementation plan. The ThermalPilot dashboard, phone access, MCP server and DeepSeek agents have not been implemented. No performance improvement is claimed.
+**Status: TP-00 baseline preparation.** The inherited application compiles with an inert ThermalPilot entry point. The dashboard, phone access, MCP server and DeepSeek agents have not been implemented. No performance improvement is claimed.
 
 ## Intended experience
 
@@ -20,6 +20,10 @@ A personal PC monitoring, profiles and automation hub being developed from [G-He
 - [Upstream source audit](docs/thermalpilot/SOURCE_AUDIT.md)
 - [Build status and resume point](docs/thermalpilot/BUILD_STATUS.md)
 - [Contributor and agent instructions](AGENTS.md)
+- [Build the inert baseline](docs/thermalpilot/BUILD_GUIDE.md)
+- [Host and bridge architecture decision](docs/thermalpilot/ADR-001-HOST-AND-BRIDGE.md)
+- [TP-00 evidence and limits](docs/thermalpilot/TP-00-EVIDENCE.md)
+- [Dependency/provenance inventory](docs/thermalpilot/DEPENDENCIES.md)
 
 The first target device is an ASUS ROG Zephyrus G15 GA503RM with a Ryzen 9 6900HS and RTX 3060 Laptop GPU. Hardware identity has been observed; available controls and sensor behaviour still require validation.
 
@@ -29,4 +33,4 @@ ThermalPilot is a renamed fork of seerge/g-helper, preserving its history. The p
 
 The portfolio should distinguish inherited hardware support from original ThermalPilot work: the hub, command coordination, schedules, evidence-backed reporting, agents, MCP tools and measured experiments.
 
-Build preparation must account for the .NET 10 target and the upstream pre-build hook that signals a running G-Helper process to exit. Read the source audit before building or launching a development version.
+Use PowerShell 7.4+ and the pinned .NET 10.0.403 SDK. The fork removes upstream's process-stopping build hook and disables the inherited release/signing job. The baseline deliberately returns immediately; it is not a working controller. Do not switch to the inherited startup without the bootstrap and handover checkpoints.
