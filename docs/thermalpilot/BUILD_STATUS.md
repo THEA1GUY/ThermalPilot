@@ -4,9 +4,9 @@ Updated: 30 October 2026, Africa/Lagos.
 
 ## Resume point
 
-**Next checkpoint: TP-00 — approve the plan, prepare the toolchain and settle integration boundaries.**
+**TP-00 completed; awaiting owner review. Next checkpoint: TP-01 — local host, shared contracts and persistent storage.**
 
-Planning and repository preparation are complete. No ThermalPilot application features are implemented. No application build, live sensor sampling, benchmark, profile change, schedule execution or cloud-agent invocation has been performed.
+The owner approved the plan and TP-00. The inherited application now builds/publishes with an inert entry point. No runtime hub features are implemented, and no application executable, live sensor sampling, benchmark, profile change, schedule execution or cloud-agent invocation has been run.
 
 ## Completed preparation
 
@@ -26,7 +26,7 @@ Planning and repository preparation are complete. No ThermalPilot application fe
 
 | ID | Status | Evidence / next gate |
 |---|---|---|
-| TP-00 | Not started; preparation available | Approve design proposals; settle dedicated development location, SDK/build isolation and bridge boundaries |
+| TP-00 | Completed; owner review pending | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
 | TP-01 | Not started | Persistent local host and shared contracts |
 | TP-02 | Not started | Read-only bridge and reliable telemetry |
 | TP-03 | Not started | Desktop/paired-phone dashboard |
@@ -44,17 +44,33 @@ Every checkpoint requires owner review before the next one. See IMPLEMENTATION_P
 
 ## Known gaps and pending decisions
 
-- Source targets .NET 10; installed SDK observed is .NET 9.0.301. No SDK installation was performed.
+- SDK 10.0.403 is installed in ThermalPilot's per-user tools directory and pinned by root global.json. System-wide .NET 9.0.301 remains unchanged.
 - Hardware identity is known, but sensor support, available controls, existing controller/service versions and actual baseline performance are not yet verified.
-- Prefer a narrow G-Helper IPC bridge; this remains subject to a feasibility spike.
-- Windows/personal use/SQLite, precise stack, LAN-first phone access, retention and automation bounds require confirmation of the proposed plan. Phone access and minimal-telemetry DeepSeek cloud use were explicitly requested.
+- ADR-001 accepts a per-user host and narrow controller bridge, with required read-only extraction and writer-coordination proofs still gated in TP-02/04.
+- Windows/personal use/SQLite, .NET 10/React strict TypeScript, LAN-first phone design and user-session lifecycle are accepted with plan approval. Collection and cloud remain off; retention proposals and action permissions must be implemented/verified before enabling them.
 - DeepSeek key, model and spending limit are not configured.
 - No fixed dates or delivery-duration promises; re-estimate after TP-00.
-- No application source changes or hardware-setting changes are included in this planning checkpoint.
+- TP-00 adds a compile-only entry point and build/tooling configuration. The original control routines remain unmodified and unexecuted. Hardware settings, live controller/config, services/tasks and system SDK were not changed.
+
+## TP-00 evidence
+
+See [TP-00-EVIDENCE.md](TP-00-EVIDENCE.md), [BUILD_GUIDE.md](BUILD_GUIDE.md), [ADR-001](ADR-001-HOST-AND-BRIDGE.md) and [dependency inventory](DEPENDENCIES.md).
+
+Passed locally: SDK archive verification; locked restore; Release/win-x64 build with zero warnings/errors; framework-dependent publish; inert-entry-point inspection of build and publish outputs; negative native-file rejection; targeted C# formatting; PowerShell/XML/JSON parsing; links/whitespace; two focused reviews. The live G-Helper process and config checksum matched the before snapshot.
+
+Repeated the locked build/publish and both metadata checks in the permanent dedicated checkout: passed with zero warnings/errors. Final controller/config and relevant ASUS service states still matched the initial inventory.
+
+Source checkpoint commit: 7bee316c5258df22e36ee47c9863b512d04a48bc, pushed to origin/codex/tp-00-baseline. [GitHub Actions build](https://github.com/THEA1GUY/ThermalPilot/actions/runs/40988050307) passed for that commit. [Draft TP-00 PR #2](https://github.com/THEA1GUY/ThermalPilot/pull/2) is stacked on [planning PR #1](https://github.com/THEA1GUY/ThermalPilot/pull/1). Neither PR has been merged and no release has been created.
+
+Dependency metadata gaps for HidSharpCore/NvAPIWrapper and embedded-module provenance remain release follow-up tasks, not false clearance claims.
 
 ## Checkout
 
-The current checkout is in this chat's durable planning area, outside Quickone. It is not nested in the Quickone repository. Before sustained implementation, choose a permanent dedicated project folder and use a separate Codex project/workspace there.
+Permanent dedicated checkout: C:/Users/Asus/OneDrive/Documents/ChatGPT/ThermalPilot. Its own root and fork/upstream remotes are verified. The pushed TP-00 branch is checked out there and its locked build/publish was repeated successfully. Quickone remains untouched.
+
+## Next owner gate
+
+Review TP-00/PR #2 before approving TP-01. TP-01 builds the fake-backed local host/contracts/SQLite slice and persistence evidence; it does not enable hardware writes, phone networking or cloud agents. Do not implement later phases unattended.
 
 ## Completion record for future phases
 
