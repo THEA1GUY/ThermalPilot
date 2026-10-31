@@ -30,12 +30,22 @@ The existing G-Helper process and relevant ASUS services remained unchanged at t
 
 Initial CI found that dotnet test did not build the standalone controller; explicit solution build before publish fixed the clean-checkout failure. [Push CI](https://github.com/THEA1GUY/ThermalPilot/actions/runs/41151267117) and [PR CI](https://github.com/THEA1GUY/ThermalPilot/actions/runs/41151273456) passed for 87ad94ff2a51321ae274ad030e239a0390d72ccc. The actual Windows-native acceptance script passed malformed-frame continuity, stale quality, owned-controller reconnect, recorded gap and actual-snapshot backup/restore on the runner. This is separate from target-laptop acceptance.
 
-## Pending final acceptance
+## Final target-laptop acceptance
 
-- Thirty-minute hidden/background sampling and final overhead summary.
-- Actual owned-controller disconnect/restart, stale quality and recorded recovery gap.
-- Actual-snapshot backup/restore and malformed-frame recovery.
-- Full target-laptop acceptance script from the permanent checkout.
-- Final before/after G-Helper process/config/service observations, preserving the known checksum-change limitation.
+The final-version controller session spans 30.517 minutes and contains 462 persisted snapshots. The explicit host observation window reached 30.09 minutes with fresh actual CPU readings at its checks and no reported storage failures. This was independent of any dashboard window.
 
-These items are pending until observed, not simulated passes. BUILD_STATUS.md records the final resume point. No TP-03 implementation is authorized by TP-02.
+The complete validation capture, including earlier sleep/power checks, contains 756 actual snapshots and zero synthetic snapshots. Offline backup/restore to a fresh directory preserved every telemetry row, verified by hashing ordered row contents, and preserved both recorded gaps. The original capture remains intact.
+
+Final-session native sampling averaged 2.946 ms, maximum 27.975 ms. Across the final run, controller CPU time averaged 0.184% of one core and host CPU time 0.879% of one core; observed peak working sets were 39.9/77.4 MiB respectively. These are process observations during this workload, not a benchmark of battery impact or a fixed resource guarantee.
+
+The permanent checkout ran Build-Hub.ps1 -RequireAsusSensors successfully: locked restore, explicit solution build with zero warnings/errors, 27 tests with no failures/skips, publish, actual ASUS CPU temperature, malformed-frame continuity, stale quality after owned-controller termination, reconnection, recorded gap and actual-snapshot backup/restore. The inherited baseline also built/published and passed both inert-entry-point guards without executing it.
+
+All owned validation host/controller processes were stopped; the long-run token file was removed. The original G-Helper process and relevant ASUS service states still matched the pre-run observation. Its configuration checksum differed as described above; no claim of globally unchanged laptop settings/config is made.
+
+The idle CPU-based sampling tier is implemented and reviewed but was not observed under this target workload. Intermediate controller ticks can be skipped by latest-snapshot transport; sequence/timestamp gaps are retained without invented values. GPU temperature/mid-fan queries remain unavailable. Causal GPU-wake/battery impact remains inconclusive and optional vendor GPU providers remain absent.
+
+## Review handoff
+
+Implementation: 40a2b09562430faee89a63943f1692d1c975c9ed. Clean-build fix: 87ad94ff2a51321ae274ad030e239a0390d72ccc. ASUS-required acceptance option/evidence: 3446caa70d170652a771d2700782f7786dbf497f. [Latest verified push CI](https://github.com/THEA1GUY/ThermalPilot/actions/runs/41152917563) and [PR CI](https://github.com/THEA1GUY/ThermalPilot/actions/runs/41152922494) passed for that checkpoint.
+
+[Draft PR #4](https://github.com/THEA1GUY/ThermalPilot/pull/4) is stacked on TP-01 PR #3. No merge or release was created. BUILD_STATUS.md is the resume point; review TP-02 before approving TP-03.

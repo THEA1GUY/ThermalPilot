@@ -2,7 +2,7 @@
 
 A personal PC monitoring, profiles and automation hub being developed from [G-Helper](https://github.com/seerge/g-helper).
 
-**Status: TP-02 real telemetry implemented; device acceptance in progress.** A separate read-only controller supplies actual supported ASUS/Windows readings to the local host and SQLite history. Runtime simulation producers have been removed. The inherited application retains its inert entry point. Dashboard, phone access, hardware control, schedules, MCP and DeepSeek remain later checkpoints. No performance improvement is claimed.
+**Status: TP-02 completed, awaiting owner review.** A separate read-only controller supplies actual supported ASUS/Windows readings to the local host and SQLite history. A 30-minute final-version laptop run, 27 tests, real-device reconnect/recovery checks and CI passed. Runtime simulation producers have been removed. Dashboard, phone access, hardware control, schedules, MCP and DeepSeek remain later checkpoints. GPU temperature is currently unavailable; energy impact is inconclusive. No performance improvement is claimed.
 
 ## Intended experience
 

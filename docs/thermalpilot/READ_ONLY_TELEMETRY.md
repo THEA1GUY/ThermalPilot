@@ -74,6 +74,8 @@ G-Helper's fan percentage is relative to its configured maximum, not an independ
 
 GET /v1/telemetry returns the latest real snapshot, including stale values when applicable; absence is 503. GET /v1/telemetry/health reports bridge/collection/storage state. GET /v1/telemetry/history returns the latest 100 persisted snapshots; GET /v1/telemetry/summary returns counts/time bounds/gaps.
 
+Historical quality describes acquisition time; the live endpoint additionally applies current age. The host persists received latest snapshots, so occasional intermediate controller ticks can be skipped. Original sequence numbers/timestamps are preserved; missing ticks are not filled or interpolated.
+
 Status contract version is 2; bridge protocol is 1; SQLite schema is 2. Schema-1 data is migrated transactionally. Profiles and historical command/report/event reads remain. Simulation and synthetic-report POST routes were removed.
 
 GET /v1/policy distinguishes stored disabled defaults from this process's effective collection flag. Raw records are pruned on append, history/summary reads and periodic maintenance even without an incoming bridge sample. They expire after 72 hours and are capped at 20000 rows, with an 8192-byte per-record cap and the existing 256 MiB main-database page limit. WAL/backup/logs are outside that page limit. Gaps are capped at 1000 entries. No minute aggregates or automatic report producer exists yet; their proposed retention values do not imply active collection.
