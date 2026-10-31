@@ -29,10 +29,12 @@ public static class HubApplication
         });
         builder.Services.AddSingleton(settings);
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<FakeAdapter>();
         builder.Services.AddSingleton<ISqliteConnections>(new SqliteConnections(settings.DataDirectory));
         builder.Services.AddSingleton<SqliteStore>();
         builder.Services.AddHostedService<StoreLifetime>();
+        builder.Services.AddSingleton<TelemetryStore>();
+        builder.Services.AddSingleton<LiveTelemetryService>();
+        builder.Services.AddHostedService(provider => provider.GetRequiredService<LiveTelemetryService>());
         configureServices?.Invoke(builder.Services);
         var app = builder.Build();
         var expectedTokenHash = SHA256.HashData(Encoding.UTF8.GetBytes(settings.ApiToken));
@@ -40,7 +42,7 @@ public static class HubApplication
         app.Use(async (context, next) =>
         {
             context.Response.Headers.CacheControl = "no-store";
-            context.Response.Headers["X-ThermalPilot-Adapter"] = "fake";
+            context.Response.Headers["X-ThermalPilot-Adapter"] = "readOnlyBridge";
             context.Response.Headers["X-Content-Type-Options"] = "nosniff";
             if ((context.Connection.RemoteIpAddress is { } remote && !IPAddress.IsLoopback(remote)) ||
                 context.Request.Host.Host is not ("localhost" or "127.0.0.1" or "[::1]") ||
@@ -83,40 +85,42 @@ public static class HubApplication
             }
         });
 
-        app.MapGet("/health/live", () => Results.Ok(new { status = "alive", adapter = "fake", isSynthetic = true }));
-        app.MapGet("/health/ready", (SqliteStore store) => Results.Ok(new { status = "ready", adapter = "fake", database = store.Summary() }));
-        app.MapGet("/v1/status", () => new HostStatus(1, SqliteStore.SchemaVersion, AdapterMode.Fake, true, false, false, false));
-        app.MapGet("/v1/capabilities", (FakeAdapter adapter) => adapter.Capabilities);
-        app.MapGet("/v1/telemetry", (FakeAdapter adapter) => adapter.Snapshot());
-        app.MapGet("/v1/policy", (SqliteStore store) => store.GetPolicy());
+        app.MapGet("/health/live", () => Results.Ok(new { status = "alive", adapter = "readOnlyBridge", isSynthetic = false }));
+        app.MapGet("/health/ready", (SqliteStore store, LiveTelemetryService live) =>
+            Results.Ok(new { status = "ready", adapter = "readOnlyBridge", database = store.Summary(), telemetry = live.Health }));
+        app.MapGet("/v1/status", () => new HostStatus(2, SqliteStore.SchemaVersion, AdapterMode.ReadOnlyBridge, false, false, settings.CollectTelemetry, false));
+        app.MapGet("/v1/capabilities", (LiveTelemetryService live) =>
+            new DeviceCapabilities(AdapterMode.ReadOnlyBridge, live.Snapshot() is { } sample && sample.Sensors.Any(r => r.Quality == MeasurementQuality.Fresh),
+                false, live.Snapshot() is { } snapshot && snapshot.Sensors.Any(r => r.Quality == MeasurementQuality.Fresh), []));
+        app.MapGet("/v1/telemetry", (LiveTelemetryService live) => live.Snapshot() is { } snapshot
+            ? Results.Ok(snapshot) : Results.Problem(statusCode: 503, title: "real_telemetry_unavailable"));
+        app.MapGet("/v1/telemetry/history", (TelemetryStore store) => store.Latest());
+        app.MapGet("/v1/telemetry/summary", (TelemetryStore store) => store.Summary());
+        app.MapGet("/v1/telemetry/health", (LiveTelemetryService live) => live.Health);
+        app.MapGet("/v1/policy", (SqliteStore store) => new
+        {
+            storedDefaults = store.GetPolicy(),
+            effectiveCollectionEnabled = settings.CollectTelemetry,
+            cloudEnabled = false,
+            rawMaximumRows = 20000,
+            rawMaximumHours = 72,
+            aggregateCollectionEnabled = false
+        });
         app.MapGet("/v1/profiles", (SqliteStore store) => store.ListProfiles());
         app.MapGet("/v1/profiles/{id:guid}", (Guid id, SqliteStore store) =>
             store.GetProfile(id) is { } profile ? Results.Ok(profile) : Results.NotFound());
         app.MapPost("/v1/profiles", (CreateProfileRequest request, SqliteStore store) =>
         {
             var profile = store.CreateProfile(request);
-            app.Logger.LogInformation("Profile {ProfileId} saved in fake mode", profile.Id);
+            app.Logger.LogInformation("Profile {ProfileId} saved; hardware application is disabled", profile.Id);
             return Results.Created("/v1/profiles/" + profile.Id, profile);
         });
         app.MapGet("/v1/commands", (SqliteStore store) => store.ListCommands());
         app.MapGet("/v1/commands/{id:guid}", (Guid id, SqliteStore store) =>
             store.GetCommand(id) is { } command ? Results.Ok(command) : Results.NotFound());
-        app.MapPost("/v1/commands/simulate", (SimulateCommandRequest request, SqliteStore store) =>
-        {
-            var receipt = store.SimulateCommand(request);
-            app.Logger.LogInformation("Command {CommandId} simulated; correlation {CorrelationId}; replay {Replayed}",
-                receipt.Command.Id, receipt.Command.CorrelationId, receipt.Replayed);
-            return Results.Ok(receipt);
-        });
         app.MapGet("/v1/reports", (SqliteStore store) => store.ListReports());
         app.MapGet("/v1/reports/{id:guid}", (Guid id, SqliteStore store) =>
             store.GetReport(id) is { } report ? Results.Ok(report) : Results.NotFound());
-        app.MapPost("/v1/reports/synthetic", (CreateSyntheticReportRequest request, SqliteStore store) =>
-        {
-            var report = store.CreateSyntheticReport(request);
-            app.Logger.LogInformation("Synthetic report {ReportId} saved", report.Id);
-            return Results.Created("/v1/reports/" + report.Id, report);
-        });
         app.MapGet("/v1/events", (SqliteStore store) => store.ListEvents());
         return app;
     }

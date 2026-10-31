@@ -4,9 +4,9 @@ Updated: 31 October 2026, Africa/Lagos.
 
 ## Resume point
 
-**TP-01 completed; awaiting owner review. Next checkpoint: TP-02 — read-only bridge and reliable telemetry.**
+**TP-02 implemented; real-device acceptance in progress. Next owner gate: review TP-02 before TP-03.**
 
-The owner accepted TP-00 and authorized TP-01 by asking to continue. The inherited application still builds/publishes with an inert entry point. Only the separate fake host has been executed; no live sensor sampling, benchmark, hardware profile change, schedule execution or cloud-agent invocation has been run.
+The owner accepted TP-01 and authorized TP-02 with an explicit no-simulation requirement. A separate read-only controller and host have sampled and persisted actual laptop measurements; runtime simulation producers are removed. The inherited application entry point remains inert. No benchmark, hardware profile change, schedule execution or cloud-agent invocation has been run.
 
 ## Completed preparation
 
@@ -27,8 +27,8 @@ The owner accepted TP-00 and authorized TP-01 by asking to continue. The inherit
 | ID | Status | Evidence / next gate |
 |---|---|---|
 | TP-00 | Completed; owner authorized continuation | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
-| TP-01 | Completed; owner review pending | Fake host/contracts/SQLite; 29 tests and process restart/backup/restore passed in both checkouts and CI; draft PR #3 |
-| TP-02 | Not started | Read-only bridge and reliable telemetry |
+| TP-01 | Completed; owner authorized continuation | Historical storage foundation; 29 tests and recovery checks passed; draft PR #3 |
+| TP-02 | Implemented; real acceptance in progress | Actual ASUS/Windows readings, sleep/resume and AC/battery transitions observed; long run/recovery/permanent/CI pending |
 | TP-03 | Not started | Desktop/paired-phone dashboard |
 | TP-04 | Not started | Coordinated profiles and supported controls |
 | TP-05 | Not started | Persistent schedules and temporary profiles |
@@ -84,7 +84,17 @@ Source checkpoint commit: 91125ce8ea3237cf130e04d1ec07f03d125e96fd, verified on 
 
 ## Next owner gate
 
-Review TP-01 before approving TP-02. TP-02 must prove read-only bootstrap and telemetry under ADR-001 without initializing upstream control paths. Do not implement later phases unattended.
+Complete and review TP-02 before approving TP-03. No simulated measurement, simulated actuation or synthetic report may stand in for actual device evidence. Do not implement later phases unattended.
+
+## TP-02 evidence
+
+Scope: D-06 read-only extraction/pipe and D-10 bounded local raw storage; R-04 sensor quality/freshness foundation and R-11 battery observations. See [READ_ONLY_TELEMETRY.md](READ_ONLY_TELEMETRY.md) and [TP-02-EVIDENCE.md](TP-02-EVIDENCE.md).
+
+The controller selectively reuses upstream DSTS/native Windows sensor knowledge without linking the application/control bootstrap. It has an owner/session-scoped pipe, explicit owner ACL with NETWORK deny, bounded typed protocol and no write operation. The real G-Helper remains the writer.
+
+Actual supported readings were sampled and persisted; unsupported/unavailable GPU temperature and mid-fan queries stayed explicit. Owner-performed sleep/resume produced a 66.5-second gap, corroborated by Windows power-event IDs. Both AC and battery sampling tiers were observed. Owner-provided G-Helper readings and private unit-normalization evidence were recorded.
+
+SQLite/API/protocol regression tests passed; focused native/C# and host/persistence/script reviews are clear after fixes. Thirty-minute hidden collection, actual disconnect/recovery, final overhead, permanent-checkout/CI and pushed phase evidence remain pending.
 
 ## Completion record for future phases
 

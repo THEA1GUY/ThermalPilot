@@ -19,7 +19,7 @@ public sealed class TestWorkspace : IDisposable
     public string PathFor(string name) => Path.Combine(Root, name);
     public SqliteStore Store(string name = "data")
     {
-        var store = new SqliteStore(new SqliteConnections(PathFor(name)), TimeProvider.System, new FakeAdapter());
+        var store = new SqliteStore(new SqliteConnections(PathFor(name)), TimeProvider.System);
         store.Initialize();
         return store;
     }
@@ -86,10 +86,4 @@ public sealed class RunningHub : IAsyncDisposable
         await app.StopAsync();
         await app.DisposeAsync();
     }
-}
-
-public static class TestRequests
-{
-    public static SimulateCommandRequest Command(ProfileRecord profile, string? key = null) =>
-        new(profile.Id, profile.Version, key ?? Guid.NewGuid().ToString("N"), Guid.NewGuid(), DateTimeOffset.UtcNow.AddMinutes(5));
 }

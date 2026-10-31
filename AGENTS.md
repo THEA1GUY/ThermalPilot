@@ -4,12 +4,13 @@
 
 ThermalPilot is a personal Windows PC hub built from seerge/g-helper, with a desktop/phone dashboard, persistent local history, profiles, schedules, Codex MCP, and two DeepSeek cloud-agent roles. The agent roles are runtime product features, not an instruction to delegate repository work.
 
-Read README.md and docs/thermalpilot/{IMPLEMENTATION_PLAN,SOURCE_AUDIT,BUILD_STATUS}.md before implementation. TP-00 supplies an inert baseline; TP-01 adds the separate fake-only host/contracts/SQLite slice. BUILD_STATUS is the current resume point.
+Read README.md and docs/thermalpilot/{IMPLEMENTATION_PLAN,SOURCE_AUDIT,BUILD_STATUS}.md before implementation. TP-00 supplies an inert baseline; TP-01 added local storage; TP-02 replaces runtime simulation with actual read-only telemetry. BUILD_STATUS is the current resume point.
 
 ## Scope and ownership
 
 - This project has its own repository, THEA1GUY/ThermalPilot. It is separate from Quickone/unimeal. Never modify that project as part of this work.
 - The owner approved the plan and TP-00 on 30 October 2026 and subsequently authorized TP-01. Windows/personal use/SQLite, the .NET 10 and React/strict TypeScript stack, LAN-first phone design and user-session lifecycle are accepted directions. Runtime gates, retention/spending configuration and unattended action permissions remain as specified in ADR-001 and later checkpoints.
+- On 31 October the owner accepted TP-01, authorized TP-02 and required absolutely no simulated work. Runtime sensor/action results must be actual or explicitly unavailable/unsupported/stale. Historical simulation record types are retained only for old data; no producer or fake adapter remains.
 - Preserve upstream source/history, LICENSE and notices. Do not represent inherited G-Helper functionality as new ThermalPilot work.
 - Do not silently rename the upstream executable, application-data directory or global process event. Specify migration and coexistence behaviour first.
 - Use PowerShell on Windows; npx.cmd if needed. No Temp-directory cleanup during a task.
@@ -22,7 +23,7 @@ Read README.md and docs/thermalpilot/{IMPLEMENTATION_PLAN,SOURCE_AUDIT,BUILD_STA
 - Verify git rev-parse --show-toplevel is this checkout before every commit. Never commit to a parent repository or push changes to upstream. Never force push.
 - No AI attribution or coauthor trailers in commits, PRs or GitHub content.
 - Use scripts/Build-Baseline.ps1 from PowerShell 7.4+. TP-00 removes KillRunningGHelper and selects the empty ThermalPilot.BaselineEntryPoint.Main; preserve both protections until an approved runtime bootstrap replaces them. Never set a global CI environment variable to suppress unrelated behaviour.
-- Read docs/thermalpilot/ADR-001-HOST-AND-BRIDGE.md before runtime work and LOCAL_HOST.md for TP-01. Build-Hub.ps1 runs fake-host persistence checks; no hardware bridge, task or controller is enabled. The inherited release/signing job is disabled for this fork.
+- Read docs/thermalpilot/ADR-001-HOST-AND-BRIDGE.md and READ_ONLY_TELEMETRY.md before runtime work. Build-Hub.ps1 runs actual Windows-native telemetry/reconnect/recovery checks and refuses an existing controller. Only owned test children may be stopped. No hardware writes or startup task are enabled. The inherited release/signing job is disabled for this fork.
 - Do not run upstream Program.Main as a read-only sensor probe: startup can apply settings and affect other controllers.
 - Keep one hardware-writing authority. Route G-Helper UI, hotkeys, reapply timers, automatic events, hub, scheduler and agents through coordinated ownership. An external lock alone does not coordinate existing internal writers.
 - Typed commands only for AI and remote controls. No arbitrary shell or raw ACPI endpoints. Reject custom mode_command fields in agent-created/imported hub profiles.

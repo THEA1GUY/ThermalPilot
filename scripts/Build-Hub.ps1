@@ -22,6 +22,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Hub tests failed.' }
     & $DotnetPath publish hub/ThermalPilot.Host/ThermalPilot.Host.csproj --configuration Release --no-build --no-restore --output artifacts/hub
     if ($LASTEXITCODE -ne 0) { throw 'Hub publish failed.' }
-    & (Join-Path $PSScriptRoot 'Verify-HubPersistence.ps1') -DotnetPath $DotnetPath -HostAssembly (Join-Path $repoRoot 'artifacts/hub/ThermalPilot.Host.dll')
+    & $DotnetPath publish hub/ThermalPilot.Controller/ThermalPilot.Controller.csproj --configuration Release --no-build --no-restore --output artifacts/controller
+    if ($LASTEXITCODE -ne 0) { throw 'Controller publish failed.' }
+    & (Join-Path $PSScriptRoot 'Verify-LiveBridge.ps1') -DotnetPath $DotnetPath -HostAssembly (Join-Path $repoRoot 'artifacts/hub/ThermalPilot.Host.dll') -ControllerAssembly (Join-Path $repoRoot 'artifacts/controller/ThermalPilot.Controller.dll')
 }
 finally { Pop-Location }

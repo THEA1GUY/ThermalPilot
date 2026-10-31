@@ -1,5 +1,7 @@
 # TP-01 local host
 
+Historical TP-01 record. TP-02 removes the fake adapter and simulation producers; current commands, build checks and API behaviour are documented in [READ_ONLY_TELEMETRY.md](READ_ONLY_TELEMETRY.md). Do not use this archived API walkthrough against the current host.
+
 Updated: 31 October 2026, Africa/Lagos.
 
 This checkpoint is a fake-only local backend. It stores profiles, simulated commands, synthetic reports and audit events. It does not control or monitor hardware, run schedules, call a model, serve a dashboard or accept phone connections.

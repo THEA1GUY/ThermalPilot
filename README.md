@@ -2,7 +2,7 @@
 
 A personal PC monitoring, profiles and automation hub being developed from [G-Helper](https://github.com/seerge/g-helper).
 
-**Status: TP-01 completed, awaiting owner review.** A separate fake-only host stores profiles, simulated commands, synthetic reports and audit history in SQLite. Local, dedicated-checkout and CI persistence checks passed. The inherited application retains its inert entry point. The dashboard, phone access, live telemetry, hardware controls, MCP server and DeepSeek agents remain later checkpoints. No performance improvement is claimed.
+**Status: TP-02 real telemetry implemented; device acceptance in progress.** A separate read-only controller supplies actual supported ASUS/Windows readings to the local host and SQLite history. Runtime simulation producers have been removed. The inherited application retains its inert entry point. Dashboard, phone access, hardware control, schedules, MCP and DeepSeek remain later checkpoints. No performance improvement is claimed.
 
 ## Intended experience
 
@@ -21,7 +21,9 @@ A personal PC monitoring, profiles and automation hub being developed from [G-He
 - [Build status and resume point](docs/thermalpilot/BUILD_STATUS.md)
 - [Contributor and agent instructions](AGENTS.md)
 - [Build the inert baseline](docs/thermalpilot/BUILD_GUIDE.md)
-- [Build and use the fake local host](docs/thermalpilot/LOCAL_HOST.md)
+- [Build and use real read-only telemetry](docs/thermalpilot/READ_ONLY_TELEMETRY.md)
+- [TP-02 evidence and remaining checks](docs/thermalpilot/TP-02-EVIDENCE.md)
+- [Historical TP-01 local host](docs/thermalpilot/LOCAL_HOST.md)
 - [TP-01 persistence and recovery evidence](docs/thermalpilot/TP-01-EVIDENCE.md)
 - [Host and bridge architecture decision](docs/thermalpilot/ADR-001-HOST-AND-BRIDGE.md)
 - [TP-00 evidence and limits](docs/thermalpilot/TP-00-EVIDENCE.md)

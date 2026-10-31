@@ -6,9 +6,9 @@ using ThermalPilot.Contracts;
 
 namespace ThermalPilot.Host;
 
-public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clock, FakeAdapter adapter)
+public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clock)
 {
-    public const int SchemaVersion = 1;
+    public const int SchemaVersion = 2;
     public const int ApplicationId = 0x54504C54;
     public static RetentionPolicy DefaultPolicy { get; } = new(false, 72, 30, 90, 256, false, 0);
 
@@ -49,6 +49,22 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
                 transaction.Commit();
             }
 
+            if (Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture) == 1)
+            {
+                AssertSchema(connection, 1);
+                using var migration = connection.CreateCommand();
+                migration.CommandText = """
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE telemetry(session_id TEXT NOT NULL,sequence INTEGER NOT NULL,captured_at TEXT NOT NULL,
+                        document TEXT NOT NULL CHECK(json_valid(document)),UNIQUE(session_id,sequence));
+                    CREATE INDEX telemetry_age ON telemetry(captured_at);
+                    CREATE TABLE telemetry_gaps(at TEXT NOT NULL,reason TEXT NOT NULL,seconds REAL NOT NULL);
+                    INSERT INTO schema_migrations VALUES(2, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                    PRAGMA user_version=2;
+                    COMMIT;
+                    """;
+                migration.ExecuteNonQuery();
+            }
             AssertCurrent(connection);
             using var wal = Sql(connection, null, "PRAGMA journal_mode = WAL;");
             if (!string.Equals(Convert.ToString(wal.ExecuteScalar(), CultureInfo.InvariantCulture), "wal", StringComparison.OrdinalIgnoreCase))
@@ -74,63 +90,8 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
     public ProfileRecord? GetProfile(Guid id) => ReadOne<ProfileRecord>("SELECT document FROM profiles WHERE id=$id;", id);
     public IReadOnlyList<ProfileRecord> ListProfiles() => ReadMany<ProfileRecord>("SELECT document FROM profiles ORDER BY rowid DESC LIMIT 100;");
 
-    public CommandReceipt SimulateCommand(SimulateCommandRequest request)
-    {
-        Validation.Command(request);
-        var fingerprint = Convert.ToHexString(SHA256.HashData(JsonSerializer.SerializeToUtf8Bytes(request, ContractJson.Options)));
-        return Run(connection =>
-        {
-            using var transaction = connection.BeginTransaction(deferred: false);
-            using (var existing = Sql(connection, transaction,
-                "SELECT request_hash, document FROM commands WHERE idempotency_key=$key;", ("$key", request.IdempotencyKey)))
-            using (var reader = existing.ExecuteReader())
-            {
-                if (reader.Read())
-                {
-                    if (reader.GetString(0) != fingerprint)
-                        throw new RequestFailure("idempotency_conflict", "That key belongs to a different request.", 409);
-                    return new CommandReceipt(Deserialize<CommandRecord>(reader.GetString(1)), true);
-                }
-            }
-
-            if (request.ExpiresAtUtc <= clock.GetUtcNow())
-                throw new RequestFailure("command_expired", "The command has expired.", 410);
-            using var query = Sql(connection, transaction, "SELECT document FROM profiles WHERE id=$id;", ("$id", request.ProfileId.ToString("D")));
-            var document = query.ExecuteScalar() as string;
-            if (document is null) throw new RequestFailure("profile_not_found", "Profile not found.", 404);
-            var profile = Deserialize<ProfileRecord>(document);
-            if (profile.Version != request.ExpectedProfileVersion)
-                throw new RequestFailure("profile_version_conflict", "The profile version has changed.", 409);
-
-            var command = adapter.Simulate(request, Guid.NewGuid(), clock.GetUtcNow());
-            using var insert = Sql(connection, transaction, """
-                INSERT INTO commands(id,idempotency_key,request_hash,profile_id,document)
-                VALUES($id,$key,$hash,$profile,$document);
-                """, ("$id", command.Id.ToString("D")), ("$key", request.IdempotencyKey), ("$hash", fingerprint),
-                ("$profile", profile.Id.ToString("D")), ("$document", JsonSerializer.Serialize(command, ContractJson.Options)));
-            insert.ExecuteNonQuery();
-            AppendEvent(connection, transaction, EventKind.CommandSimulated, command.Id, request.CorrelationId);
-            transaction.Commit();
-            return new CommandReceipt(command, false);
-        });
-    }
-
     public CommandRecord? GetCommand(Guid id) => ReadOne<CommandRecord>("SELECT document FROM commands WHERE id=$id;", id);
     public IReadOnlyList<CommandRecord> ListCommands() => ReadMany<CommandRecord>("SELECT document FROM commands ORDER BY rowid DESC LIMIT 100;");
-
-    public ReportRecord CreateSyntheticReport(CreateSyntheticReportRequest request)
-    {
-        Validation.Report(request);
-        var report = new ReportRecord(Guid.NewGuid(), request.Title.Trim(), request.Body, true, AdapterMode.Fake, clock.GetUtcNow());
-        return Run(connection =>
-        {
-            using var transaction = connection.BeginTransaction(deferred: false);
-            InsertDocument(connection, transaction, "INSERT INTO reports(id,document) VALUES($id,$document);", report.Id, report);
-            AppendEvent(connection, transaction, EventKind.SyntheticReportCreated, report.Id, Guid.NewGuid());
-            transaction.Commit();
-            return report;
-        });
-    }
 
     public ReportRecord? GetReport(Guid id) => ReadOne<ReportRecord>("SELECT document FROM reports WHERE id=$id;", id);
     public IReadOnlyList<ReportRecord> ListReports() => ReadMany<ReportRecord>("SELECT document FROM reports ORDER BY rowid DESC LIMIT 100;");
@@ -186,11 +147,20 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
         }
     }
 
-    public static void AssertCurrent(SqliteConnection connection)
+    public static void AssertCurrent(SqliteConnection connection) => AssertSchema(connection, SchemaVersion);
+
+    public static void AssertSupported(SqliteConnection connection)
+    {
+        var version = Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture);
+        if (version is not (1 or SchemaVersion)) throw new InvalidDataException("Unsupported backup schema.");
+        AssertSchema(connection, version);
+    }
+
+    private static void AssertSchema(SqliteConnection connection, int expectedVersion)
     {
         var version = Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture);
         var application = Convert.ToInt32(Scalar(connection, null, "PRAGMA application_id;"), CultureInfo.InvariantCulture);
-        if (version != SchemaVersion || application != ApplicationId)
+        if (version != expectedVersion || application != ApplicationId)
             throw new InvalidDataException("Unsupported database identity or schema version.");
         if (!string.Equals(Scalar(connection, null, "PRAGMA quick_check;") as string, "ok", StringComparison.Ordinal))
             throw new InvalidDataException("Database integrity check failed.");
@@ -198,8 +168,10 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
             SELECT count(*) FROM sqlite_schema WHERE type='table'
             AND name IN ('schema_migrations','profiles','commands','reports','events','preferences');
             """), CultureInfo.InvariantCulture);
-        if (tables != 6 || Convert.ToInt64(Scalar(connection, null, "SELECT max(version) FROM schema_migrations;"), CultureInfo.InvariantCulture) != SchemaVersion)
+        if (tables != 6 || Convert.ToInt64(Scalar(connection, null, "SELECT max(version) FROM schema_migrations;"), CultureInfo.InvariantCulture) != expectedVersion)
             throw new InvalidDataException("The migration ledger is inconsistent.");
+        if (expectedVersion == 2 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('telemetry','telemetry_gaps');") != 2)
+            throw new InvalidDataException("Telemetry migration is incomplete.");
         ReadPolicy(connection);
     }
 
