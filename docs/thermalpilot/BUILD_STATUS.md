@@ -104,6 +104,8 @@ Implemented the saved-profile authoring slice: strict typed profile archives; cr
 
 Validation in the isolated TP-04 checkout: pinned .NET SDK 10.0.403 test run passed all 38 host/storage tests, including profile persistence across reopening, schema migration, clone/version history, import/export, paired-phone restrictions and unavailable activation preview. `npm.cmd run build` passed strict TypeScript and Vite production bundling. The generated static bundle was restored after validation because the owner's existing host is still running the older API; deploying this UI requires a later coordinated host restart. No actual-device profile activation, restore, benchmark or phone acceptance was attempted. Continue TP-04 with the single-writer design and supported-control proof before enabling any hardware action.
 
+Review branch: `codex/tp-04-profile-authoring`; implementation commit `06a0e16f0ffa46ac7883069e291193e57a2abaa6` is pushed to the owner's fork. [Draft PR #6](https://github.com/THEA1GUY/ThermalPilot/pull/6) targets `codex/tp-03-dashboard`; GitHub CI is pending. The PR is open and unmerged; owner review remains pending.
+
 ## Next owner gate
 
 Review TP-02/[PR #4](https://github.com/THEA1GUY/ThermalPilot/pull/4) and TP-03/[draft PR #5](https://github.com/THEA1GUY/ThermalPilot/pull/5), then complete the Android phone acceptance before approving TP-03. No TP-04 work may start until TP-03 is accepted. No simulated measurement, simulated actuation or synthetic report may stand in for actual device evidence.
