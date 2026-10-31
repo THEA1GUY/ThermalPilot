@@ -14,6 +14,16 @@ if (-not $DotnetPath) {
 }
 Push-Location $repoRoot
 try {
+    $node = Get-Command node -ErrorAction Stop
+    $npm = Get-Command npm.cmd -ErrorAction Stop
+    Push-Location (Join-Path $repoRoot 'dashboard')
+    try {
+        & $npm.Source ci --ignore-scripts --no-audit --no-fund
+        if ($LASTEXITCODE -ne 0) { throw 'Dashboard locked dependency install failed.' }
+        & $npm.Source run build
+        if ($LASTEXITCODE -ne 0) { throw 'Dashboard TypeScript/Vite build failed.' }
+    }
+    finally { Pop-Location }
     $expected = (Get-Content -LiteralPath global.json -Raw | ConvertFrom-Json).sdk.version
     $actual = & $DotnetPath --version
     if ($LASTEXITCODE -ne 0 -or "$actual".Trim() -ne $expected) { throw "Expected SDK $expected." }

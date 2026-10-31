@@ -11,6 +11,9 @@ public static class Validation
             throw new RequestFailure("invalid_mode", "Select a supported base mode.", 400);
     }
 
+    public static void Incident(CreateIncidentRequest request) => Text(request.Note, 200, "incident_note");
+    public static void PairedClientName(string name) => Text(name, 48, "paired_client_name");
+
     private static void Text(string? text, int maximumLength, string field)
     {
         if (string.IsNullOrWhiteSpace(text) || text.Length > maximumLength || text.Any(char.IsControl))

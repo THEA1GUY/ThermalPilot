@@ -6,7 +6,7 @@ using ThermalPilot.Contracts;
 
 namespace ThermalPilot.Host;
 
-public sealed class LiveTelemetryService(HostSettings settings, TelemetryStore store, ILogger<LiveTelemetryService> logger) : BackgroundService
+public sealed class LiveTelemetryService(HostSettings settings, TelemetryStore store, SqliteStore settingsStore, ILogger<LiveTelemetryService> logger) : BackgroundService
 {
     private LiveSnapshot? latest;
     private string state = "not_connected";
@@ -14,17 +14,29 @@ public sealed class LiveTelemetryService(HostSettings settings, TelemetryStore s
     private long received;
     private DateTimeOffset? lastReceived;
     private double? gapSeconds;
+    private int collectionEnabled;
+    private DateTimeOffset lastPruned;
+    private readonly object collectionGate = new();
+
+    public bool CollectionEnabled => Volatile.Read(ref collectionEnabled) == 1;
+
+    public override async Task StartAsync(CancellationToken cancellationToken)
+    {
+        var enabled = settings.CollectTelemetry ?? settingsStore.GetPolicy().CollectionEnabled;
+        Volatile.Write(ref collectionEnabled, enabled ? 1 : 0);
+        await base.StartAsync(cancellationToken);
+    }
 
     public LiveSnapshot? Snapshot()
     {
         var snapshot = Volatile.Read(ref latest);
         if (snapshot is null) return null;
         var age = DateTimeOffset.UtcNow - snapshot.CapturedAtUtc;
-        if (age.TotalSeconds <= Math.Max(15, snapshot.IntervalSeconds * 3)) return snapshot;
+        if (CollectionEnabled && age.TotalSeconds <= Math.Max(15, snapshot.IntervalSeconds * 3)) return snapshot;
         return snapshot with
         {
             Sensors = snapshot.Sensors.Select(r => r.Value.HasValue
-            ? r with { Quality = MeasurementQuality.Stale, Reason = "bridge_sample_expired" } : r).ToArray()
+            ? r with { Quality = MeasurementQuality.Stale, Reason = CollectionEnabled ? "bridge_sample_expired" : "collection_disabled" } : r).ToArray()
         };
     }
 
@@ -35,31 +47,46 @@ public sealed class LiveTelemetryService(HostSettings settings, TelemetryStore s
         lastReceivedAtUtc = lastReceived,
         lastGapSeconds = gapSeconds,
         storageError,
-        collectionEnabled = settings.CollectTelemetry,
+        collectionEnabled = CollectionEnabled,
         hardwareWritesEnabled = false
     };
 
+    public bool SetCollectionEnabled(bool enabled)
+    {
+        lock (collectionGate)
+        {
+            settingsStore.SetCollectionEnabled(enabled);
+            Volatile.Write(ref collectionEnabled, enabled ? 1 : 0);
+            state = enabled ? "connecting_read_only" : "collection_disabled";
+        }
+        return enabled;
+    }
+
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!settings.CollectTelemetry)
-        {
-            state = "collection_disabled";
-            while (!stoppingToken.IsCancellationRequested)
-            {
-                try { store.Prune(); storageError = null; }
-                catch (StorageFailure failure) { storageError = failure.Code; }
-                await Task.Delay(TimeSpan.FromMinutes(1), stoppingToken);
-            }
-            return;
-        }
-        if (!OperatingSystem.IsWindows()) { state = "windows_required"; return; }
-        try { latest = store.Latest(1).FirstOrDefault(); }
-        catch (StorageFailure failure) { storageError = failure.Code; }
-        var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("No owner SID.");
-        var name = "ThermalPilot.Bridge.v1." + sid + "." + Process.GetCurrentProcess().SessionId;
         var failures = 0;
         while (!stoppingToken.IsCancellationRequested)
         {
+            if (!CollectionEnabled)
+            {
+                state = "collection_disabled";
+                if (DateTimeOffset.UtcNow - lastPruned >= TimeSpan.FromMinutes(1))
+                {
+                    try { store.Prune(); storageError = null; }
+                    catch (StorageFailure failure) { storageError = failure.Code; }
+                    lastPruned = DateTimeOffset.UtcNow;
+                }
+                await Task.Delay(TimeSpan.FromSeconds(1), stoppingToken);
+                continue;
+            }
+            if (!OperatingSystem.IsWindows()) { state = "windows_required"; await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken); continue; }
+            var sid = WindowsIdentity.GetCurrent().User?.Value ?? throw new InvalidOperationException("No owner SID.");
+            var name = "ThermalPilot.Bridge.v1." + sid + "." + Process.GetCurrentProcess().SessionId;
+            if (Volatile.Read(ref latest) is null)
+            {
+                try { Volatile.Write(ref latest, store.Latest(1).FirstOrDefault()); }
+                catch (StorageFailure failure) { storageError = failure.Code; }
+            }
             try
             {
                 store.Prune();
@@ -74,27 +101,33 @@ public sealed class LiveTelemetryService(HostSettings settings, TelemetryStore s
                     throw new InvalidDataException("Bridge capability mismatch.");
                 var snapshot = reply.Snapshot ?? throw new InvalidDataException("Bridge has not sampled yet.");
                 Validate(snapshot);
-                var previous = Volatile.Read(ref latest);
-                if (previous is null || snapshot.SessionId != previous.SessionId || snapshot.Sequence > previous.Sequence)
+                lock (collectionGate)
                 {
-                    if (previous is not null)
+                    if (CollectionEnabled)
                     {
-                        var gap = (snapshot.CapturedAtUtc - previous.CapturedAtUtc).TotalSeconds;
-                        if (snapshot.SessionId != previous.SessionId || gap > previous.IntervalSeconds * 3 + 5)
+                        var previous = Volatile.Read(ref latest);
+                        if (previous is null || snapshot.SessionId != previous.SessionId || snapshot.Sequence > previous.Sequence)
                         {
-                            gapSeconds = Math.Max(0, gap);
-                            store.RecordGap(snapshot.CapturedAtUtc, snapshot.SessionId != previous.SessionId ? "bridge_restarted" : "sampling_gap", gapSeconds.Value);
+                            if (previous is not null)
+                            {
+                                var gap = (snapshot.CapturedAtUtc - previous.CapturedAtUtc).TotalSeconds;
+                                if (snapshot.SessionId != previous.SessionId || gap > previous.IntervalSeconds * 3 + 5)
+                                {
+                                    gapSeconds = Math.Max(0, gap);
+                                    store.RecordGap(snapshot.CapturedAtUtc, snapshot.SessionId != previous.SessionId ? "bridge_restarted" : "sampling_gap", gapSeconds.Value);
+                                }
+                            }
+                            store.Append(snapshot);
+                            Volatile.Write(ref latest, snapshot);
+                            Interlocked.Increment(ref received);
+                            lastReceived = DateTimeOffset.UtcNow;
+                            storageError = null;
                         }
+                        else if (snapshot.Sequence < previous.Sequence) throw new InvalidDataException("Bridge sequence regressed.");
+                        state = "connected_read_only";
+                        failures = 0;
                     }
-                    store.Append(snapshot);
-                    Volatile.Write(ref latest, snapshot);
-                    Interlocked.Increment(ref received);
-                    lastReceived = DateTimeOffset.UtcNow;
-                    storageError = null;
                 }
-                else if (snapshot.Sequence < previous.Sequence) throw new InvalidDataException("Bridge sequence regressed.");
-                state = "connected_read_only";
-                failures = 0;
             }
             catch (StorageFailure failure)
             {

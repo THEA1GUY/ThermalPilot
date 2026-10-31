@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Security.Cryptography.X509Certificates;
 
 namespace ThermalPilot.Host;
 
@@ -26,8 +27,16 @@ public static class Program
             }
             if (verb != "serve") throw new ArgumentException("Use serve, backup or restore.");
             var port = options.TryGetValue("--port", out var portText) ? int.Parse(portText, System.Globalization.CultureInfo.InvariantCulture) : 5127;
-            var collect = options.TryGetValue("--collect", out var enabled) && bool.Parse(enabled);
-            var settings = new HostSettings(dataDirectory, Environment.GetEnvironmentVariable("THERMALPILOT_API_TOKEN") ?? "", port, CollectTelemetry: collect);
+            bool? collect = options.TryGetValue("--collect", out var enabled) ? bool.Parse(enabled) : null;
+            var allowLan = options.TryGetValue("--lan", out var lanText) && bool.Parse(lanText);
+            var certificatePath = options.GetValueOrDefault("--tls-pfx");
+            if (allowLan != (certificatePath is not null)) throw new ArgumentException("--lan true requires --tls-pfx; the certificate is only used for HTTPS LAN mode.");
+            var phonePort = options.TryGetValue("--phone-port", out var phonePortText) ? int.Parse(phonePortText, System.Globalization.CultureInfo.InvariantCulture) : 5128;
+            if (!allowLan && options.ContainsKey("--phone-port")) throw new ArgumentException("--phone-port requires --lan true.");
+            using var certificate = certificatePath is null ? null : X509CertificateLoader.LoadPkcs12FromFile(
+                Path.GetFullPath(certificatePath), Environment.GetEnvironmentVariable("THERMALPILOT_TLS_PASSWORD"), X509KeyStorageFlags.EphemeralKeySet);
+            var settings = new HostSettings(dataDirectory, Environment.GetEnvironmentVariable("THERMALPILOT_API_TOKEN") ?? "",
+                port, CollectTelemetry: collect, AllowLan: allowLan, TlsCertificate: certificate, PhonePort: phonePort);
             await using var app = HubApplication.Build(settings);
             await app.RunAsync();
             return 0;
@@ -45,7 +54,7 @@ public static class Program
         Dictionary<string, string> options = new(StringComparer.Ordinal);
         for (var index = 0; index < args.Length; index += 2)
         {
-            if (args[index] is not ("--data-dir" or "--port" or "--destination" or "--source" or "--collect") ||
+            if (args[index] is not ("--data-dir" or "--port" or "--destination" or "--source" or "--collect" or "--lan" or "--tls-pfx" or "--phone-port") ||
                 !options.TryAdd(args[index], args[index + 1]))
                 throw new ArgumentException("Unknown or duplicate option.");
         }

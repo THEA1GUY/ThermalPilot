@@ -92,6 +92,34 @@ public sealed class TelemetryStore(ISqliteConnections connections)
     });
     }
 
+    public LiveSnapshot[] Range(DateTimeOffset since, DateTimeOffset until, int limit = 4000)
+    {
+        Prune();
+        return Run(connection =>
+        {
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                WITH ranked AS (
+                    SELECT document, row_number() OVER (ORDER BY captured_at ASC, rowid ASC) AS sample_number,
+                        count(*) OVER () AS sample_count
+                    FROM telemetry WHERE captured_at >= $since AND captured_at <= $until
+                )
+                SELECT document FROM ranked
+                WHERE sample_count <= $limit
+                    OR ((sample_number - 1) * $limit / sample_count) != (sample_number * $limit / sample_count)
+                ORDER BY sample_number ASC;
+                """;
+            command.Parameters.AddWithValue("$since", since.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$until", until.ToUniversalTime().ToString("O"));
+            command.Parameters.AddWithValue("$limit", Math.Clamp(limit, 1, 4000));
+            using var reader = command.ExecuteReader();
+            List<LiveSnapshot> samples = [];
+            while (reader.Read()) samples.Add(JsonSerializer.Deserialize<LiveSnapshot>(reader.GetString(0), ContractJson.Options)
+                ?? throw new InvalidDataException("Missing telemetry."));
+            return samples.ToArray();
+        });
+    }
+
     private T Run<T>(Func<SqliteConnection, T> operation)
     {
         try { using var connection = connections.Open(); return operation(connection); }

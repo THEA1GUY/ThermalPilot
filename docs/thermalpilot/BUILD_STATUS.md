@@ -4,7 +4,7 @@ Updated: 31 October 2026, Africa/Lagos.
 
 ## Resume point
 
-**TP-02 completed; awaiting owner review. Next checkpoint: TP-03 — desktop and authenticated phone dashboard.**
+**TP-03 implementation is in progress; Android device acceptance is pending.** TP-00 through TP-02 remain completed and awaiting owner review. No TP-04 work has started.
 
 The owner accepted TP-01 and authorized TP-02 with an explicit no-simulation requirement. A separate read-only controller and host have sampled and persisted actual laptop measurements; runtime simulation producers are removed. The inherited application entry point remains inert. No benchmark, hardware profile change, schedule execution or cloud-agent invocation has been run.
 
@@ -29,7 +29,7 @@ The owner accepted TP-01 and authorized TP-02 with an explicit no-simulation req
 | TP-00 | Completed; owner authorized continuation | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
 | TP-01 | Completed; owner authorized continuation | Historical storage foundation; 29 tests and recovery checks passed; draft PR #3 |
 | TP-02 | Completed; owner review pending | Actual ASUS/Windows readings; 30-minute final-version laptop run; 27 tests; ASUS-required recovery checks and CI passed; draft PR #4 |
-| TP-03 | Not started | Desktop/paired-phone dashboard |
+| TP-03 | In progress; implementation and PC checks passed, owner Android acceptance pending | Dashboard, owner collection toggle, incident/history views, LAN HTTPS pairing/revocation; see [DASHBOARD.md](DASHBOARD.md) |
 | TP-04 | Not started | Coordinated profiles and supported controls |
 | TP-05 | Not started | Persistent schedules and temporary profiles |
 | TP-06 | Not started | Workload rules, diagnosis and flight recorder |
@@ -82,9 +82,23 @@ Repeated the locked restore, Release tests/publish and separate-process recovery
 
 Source checkpoint commit: 91125ce8ea3237cf130e04d1ec07f03d125e96fd, verified on origin/codex/tp-01-local-host. [GitHub Actions build](https://github.com/THEA1GUY/ThermalPilot/actions/runs/41148488625) passed for that commit, including both inert-baseline and hub checks. [Draft TP-01 PR #3](https://github.com/THEA1GUY/ThermalPilot/pull/3) is stacked on TP-00 PR #2. No PR was merged or release created. Subsequent phase-record-only commits do not change the tested source.
 
+## TP-03 evidence
+
+Scope: D-03/D-05/D-07 dashboard and authenticated phone access; R-04, R-07, R-08, R-09, R-11, R-12 and R-13 views/preferences. The dashboard shows actual samples, persisted history, incidents, current reports/events and host policy. Owner collection changes are persisted and audited; paired phones cannot change them. Browser tokens remain in memory only. Long history windows use representative actual samples across the selected period. See [DASHBOARD.md](DASHBOARD.md).
+
+The locked React/Vite build passed. The pinned .NET 10 Release build passed with zero warnings/errors. All 35 API/storage tests passed, including served-dashboard headers/content, owner-only collection control, collection preference persistence, incident persistence, pairing permissions and migrations. `Build-Hub.ps1 -RequireAsusSensors` passed on the actual ASUS laptop: real Windows/ASUS sensor sample, malformed-frame continuity, stale state after disconnect, controller reconnect, recorded gap, and backup/restore of actual telemetry. Its owned host/controller processes were stopped by the check. Private raw evidence remains under the ignored `.private/live-check-*` directory.
+
+The Android certificate helper now invokes the static RSA certificate extension explicitly, which works with the installed PowerShell 7/.NET API. PowerShell 7.6.9 syntax parsing and an in-memory certificate API check passed. The failed initial run created no PFX or CA file; owner-entered certificate creation remains pending.
+
+Owner acceptance is still required on the actual Android phone: install and trust the generated local CA, pair over the PC's private Wi-Fi address, confirm live or explicitly unavailable sensor state, confirm history after host restart, verify phone revocation rejects requests, and exercise keyboard/touch interactions. The LAN certificate files are not generated and no firewall rule is installed. TP-03 is not complete until those observations are recorded. No sensor values or phone results have been simulated.
+
+Pushed checkpoint: `e7c6550ab04fb1685f0b49b3bed6ac0e6ffe71b9` on `origin/codex/tp-03-dashboard`, stacked on `codex/tp-02-readonly-telemetry`. The connected GitHub integration initially returned HTTP 403 for PR creation; after refreshing the GitHub CLI login, [draft PR #5](https://github.com/THEA1GUY/ThermalPilot/pull/5) was opened against TP-02.
+
+The permanent checkout was synced to this branch. Its dashboard build passed, but the .NET build stopped before tests/sensor checks because Windows denied writes to ignored `obj` cache files (`MSB3491`/`UnauthorizedAccessException`), including on retry with elevated execution. The full ASUS-required build/test/recovery run passed in the isolated implementation checkout above; no permanent-checkout pass is claimed.
+
 ## Next owner gate
 
-Review TP-02/[PR #4](https://github.com/THEA1GUY/ThermalPilot/pull/4) before approving TP-03. No simulated measurement, simulated actuation or synthetic report may stand in for actual device evidence. Do not implement later phases unattended.
+Review TP-02/[PR #4](https://github.com/THEA1GUY/ThermalPilot/pull/4) and TP-03/[draft PR #5](https://github.com/THEA1GUY/ThermalPilot/pull/5), then complete the Android phone acceptance before approving TP-03. No TP-04 work may start until TP-03 is accepted. No simulated measurement, simulated actuation or synthetic report may stand in for actual device evidence.
 
 ## TP-02 evidence
 

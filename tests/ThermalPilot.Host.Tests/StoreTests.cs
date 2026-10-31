@@ -15,7 +15,7 @@ public sealed class StoreTests
         var profile = workspace.Store().CreateProfile(new("Coding", ProfileMode.Balanced));
         var reopened = workspace.Store();
         Assert.Equal(profile, reopened.GetProfile(profile.Id));
-        Assert.Equal(new StoreSummary(2, 1, 0, 0, 1), reopened.Summary());
+        Assert.Equal(new StoreSummary(4, 1, 0, 0, 1), reopened.Summary());
         Assert.Single(reopened.ListEvents());
     }
 
@@ -100,16 +100,43 @@ public sealed class StoreTests
         using (var connection = new SqliteConnections(workspace.PathFor("data")).Open())
         {
             using var sql = connection.CreateCommand();
-            sql.CommandText = "DROP TABLE telemetry; DROP TABLE telemetry_gaps; DELETE FROM schema_migrations WHERE version=2; PRAGMA user_version=1;";
+            sql.CommandText = "DROP TABLE paired_clients; DROP TABLE incidents; DROP TABLE telemetry; DROP TABLE telemetry_gaps; DELETE FROM schema_migrations WHERE version>1; PRAGMA user_version=1;";
             sql.ExecuteNonQuery();
         }
         var backup = Path.Combine(workspace.PathFor("data"), "thermalpilot.db");
-        Assert.Equal(2, DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored")).SchemaVersion);
+        Assert.Equal(4, DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored")).SchemaVersion);
         Assert.Equal(profile, workspace.Store("restored").GetProfile(profile.Id));
         using var original = new SqliteConnections(workspace.PathFor("data")).Open();
         using var check = original.CreateCommand();
         check.CommandText = "PRAGMA user_version;";
         Assert.Equal(1L, check.ExecuteScalar());
+    }
+
+    [Fact]
+    public void Incident_notes_and_audit_survive_reopening_without_a_live_snapshot()
+    {
+        using var workspace = new TestWorkspace();
+        var store = workspace.Store();
+        var incident = store.CreateIncident(new("Fan noise during a call"), null);
+        var reopened = workspace.Store();
+        Assert.Equal(incident, Assert.Single(reopened.ListIncidents()));
+        Assert.Null(incident.SnapshotSequence);
+        Assert.Contains(reopened.ListEvents(), item => item.Kind == EventKind.IncidentMarked && item.EntityId == incident.Id);
+    }
+
+    [Fact]
+    public void Paired_tokens_are_stored_hashed_and_revoke_immediately()
+    {
+        using var workspace = new TestWorkspace();
+        var store = workspace.Store();
+        const string token = "phone-session-token-that-is-long-and-random-123456";
+        var client = store.AddPairedClient("Android phone", token);
+        Assert.True(store.IsActivePairedClient(token));
+        Assert.False(store.IsActivePairedClient("invalid-client-token-value-123456789"));
+        Assert.Null(client.RevokedAtUtc);
+        Assert.True(store.RevokePairedClient(client.Id));
+        Assert.False(store.IsActivePairedClient(token));
+        Assert.NotNull(Assert.Single(store.ListPairedClients()).RevokedAtUtc);
     }
 
     [Fact]
@@ -203,5 +230,17 @@ public sealed class StoreTests
         Assert.Equal(0, policy.CloudBudget);
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<CreateProfileRequest>(
             """{"name":"Unsafe","baseMode":"balanced","mode_command":"shell"}""", ContractJson.Options));
+    }
+
+    [Fact]
+    public void Collection_preference_is_saved_and_survives_reopening()
+    {
+        using var workspace = new TestWorkspace();
+        var store = workspace.Store();
+        Assert.True(store.SetCollectionEnabled(true).CollectionEnabled);
+        Assert.True(workspace.Store().GetPolicy().CollectionEnabled);
+        Assert.False(store.SetCollectionEnabled(false).CollectionEnabled);
+        Assert.False(workspace.Store().GetPolicy().CollectionEnabled);
+        Assert.Contains(store.ListEvents(), item => item.Kind == EventKind.CollectionPreferenceChanged);
     }
 }
