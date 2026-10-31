@@ -52,7 +52,11 @@ Focused C# persistence/contracts and local API/scripts reviews were performed. O
 
 ## Dedicated checkout and remote evidence
 
-Final results from the permanent checkout, the pushed source commit and the remote CI run are recorded in BUILD_STATUS.md after verification. Do not infer a remote pass from this local test run.
+Source checkpoint: 91125ce8ea3237cf130e04d1ec07f03d125e96fd, verified on origin/codex/tp-01-local-host. [Draft PR #3](https://github.com/THEA1GUY/ThermalPilot/pull/3) is stacked on TP-00.
+
+The permanent dedicated checkout repeated locked restore, Release tests/publish and the separate-process recovery check: all passed, including 29 tests with no failures/skips and the same one-profile/command/report, three-event result. The real G-Helper process identity/start time and configuration checksum matched the private before snapshot.
+
+[GitHub Actions](https://github.com/THEA1GUY/ThermalPilot/actions/runs/41148488625) passed for the source checkpoint, including the unchanged inert-baseline guard and the full hub/persistence script. BUILD_STATUS.md is the current resume point. Owner review is required before TP-02.
 
 ## Limits
 

@@ -2,7 +2,7 @@
 
 A personal PC monitoring, profiles and automation hub being developed from [G-Helper](https://github.com/seerge/g-helper).
 
-**Status: TP-01 local host implemented; final verification in progress.** A separate fake-only host stores profiles, simulated commands, synthetic reports and audit history in SQLite. The inherited application retains its inert entry point. The dashboard, phone access, live telemetry, hardware controls, MCP server and DeepSeek agents remain later checkpoints. No performance improvement is claimed.
+**Status: TP-01 completed, awaiting owner review.** A separate fake-only host stores profiles, simulated commands, synthetic reports and audit history in SQLite. Local, dedicated-checkout and CI persistence checks passed. The inherited application retains its inert entry point. The dashboard, phone access, live telemetry, hardware controls, MCP server and DeepSeek agents remain later checkpoints. No performance improvement is claimed.
 
 ## Intended experience
 
