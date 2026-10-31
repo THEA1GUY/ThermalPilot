@@ -1,0 +1,5 @@
+<Solution>
+  <Project Path="hub/ThermalPilot.Contracts/ThermalPilot.Contracts.csproj" />
+  <Project Path="hub/ThermalPilot.Host/ThermalPilot.Host.csproj" />
+  <Project Path="tests/ThermalPilot.Host.Tests/ThermalPilot.Host.Tests.csproj" />
+</Solution>
