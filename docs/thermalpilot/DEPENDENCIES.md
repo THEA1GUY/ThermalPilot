@@ -1,6 +1,6 @@
-# TP-00 dependency and provenance inventory
+# Dependency and provenance inventory
 
-Date: 30 October 2026. Inventory, not a claim of distribution clearance.
+Updated: 31 October 2026. Inventory, not a claim of distribution clearance.
 
 ## Preserved upstream
 
@@ -33,12 +33,29 @@ The lockfile records version/content hashes for seven direct packages and one tr
 
 Microsoft SDK/runtime/reference packs are supplied by the pinned SDK/tooling and are separate from that application PackageReference count. A later frontend/host/MCP package adds a new inventory entry and lockfile review.
 
+## TP-01 separate host graph
+
+The host has no reference to app/GHelper.csproj or its embedded modules. Its lockfile records six resolved runtime packages:
+
+| Package | Version | Licence metadata |
+|---|---|---|
+| Microsoft.Data.Sqlite | 10.0.14 | MIT |
+| Microsoft.Data.Sqlite.Core | 10.0.14 | MIT |
+| SQLitePCLRaw.bundle_e_sqlite3 | 2.1.13 | Apache-2.0 |
+| SQLitePCLRaw.core | 2.1.13 | Apache-2.0 |
+| SQLitePCLRaw.lib.e_sqlite3 | 2.1.13 | Apache-2.0 |
+| SQLitePCLRaw.provider.e_sqlite3 | 2.1.13 | Apache-2.0 |
+
+These entries reflect restored package metadata. The SQLite native binary and its upstream notices still need inclusion/review in release packaging. ASP.NET Core and .NET shared frameworks come from the pinned SDK/runtime rather than host PackageReferences.
+
+Test-only direct packages are Microsoft.AspNetCore.TestHost 10.0.14, Microsoft.NET.Test.Sdk 18.11.0, xunit 2.9.3 and xunit.runner.visualstudio 4.0.1. Their complete transitive graph/content hashes are in tests/ThermalPilot.Host.Tests/packages.lock.json. Test assemblies/packages are not part of the host publish output. Contracts, host and tests each have committed lockfiles; builds use locked restore.
+
 ## Open release tasks
 
 - Resolve HidSharpCore notices from the precise package/source version.
 - Read the NvAPIWrapper licence linked by that package.
 - Preserve inherited contributor/library notices and document binary-module provenance.
-- Inventory new UI/MCP/host dependencies when selected.
+- Inventory new UI/MCP dependencies when selected; preserve notices for the TP-01 host/native SQLite graph.
 - Recheck dependency/security advisories and redistribution notices for the actual release build.
 - Configure fork-owned signing/release/update identity. Do not reuse claims or credentials tied to upstream.
 

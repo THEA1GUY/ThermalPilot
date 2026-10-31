@@ -1,7 +1,7 @@
 # ThermalPilot implementation plan
 
 Date: 30 October 2026, Africa/Lagos.
-Status: owner approved the plan and TP-00 on 30 October 2026. Later checkpoints still require their own owner review/approval. See BUILD_STATUS.md for execution progress.
+Status: owner approved the plan and TP-00 on 30 October 2026 and subsequently authorized TP-01. Later checkpoints still require their own owner review/approval. See BUILD_STATUS.md for execution progress.
 Owner repository: [THEA1GUY/ThermalPilot](https://github.com/THEA1GUY/ThermalPilot).
 Source baseline: [seerge/g-helper at 0a1538a](https://github.com/seerge/g-helper/tree/0a1538ac4fb0337f6cf3d64a907acde10c91a3d9).
 
@@ -68,7 +68,7 @@ Proposed repository layout preserves app/:
 - docs/thermalpilot/ — decisions, plan, build status, architecture and evidence.
 - evidence/ — synthetic/redacted acceptance evidence only; private device evidence stored outside Git.
 
-These directories are proposals, not an existing scaffold.
+TP-01 implements the contracts, host and tests directories with a fake-only adapter. Bridge, MCP and UI directories remain proposals.
 
 ### Flow and ownership
 

@@ -22,3 +22,5 @@ jobs:
     - name: Build
       run: |
         ./scripts/Build-Baseline.ps1
+    - name: Hub contracts, persistence and process restart
+      run: ./scripts/Build-Hub.ps1

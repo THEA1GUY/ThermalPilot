@@ -1,12 +1,12 @@
 # ThermalPilot build status
 
-Updated: 30 October 2026, Africa/Lagos.
+Updated: 31 October 2026, Africa/Lagos.
 
 ## Resume point
 
-**TP-00 completed; awaiting owner review. Next checkpoint: TP-01 — local host, shared contracts and persistent storage.**
+**TP-01 implemented; final dedicated-checkout and remote verification in progress. Next owner gate: review TP-01 before TP-02.**
 
-The owner approved the plan and TP-00. The inherited application now builds/publishes with an inert entry point. No runtime hub features are implemented, and no application executable, live sensor sampling, benchmark, profile change, schedule execution or cloud-agent invocation has been run.
+The owner accepted TP-00 and authorized TP-01 by asking to continue. The inherited application still builds/publishes with an inert entry point. Only the separate fake host has been executed; no live sensor sampling, benchmark, hardware profile change, schedule execution or cloud-agent invocation has been run.
 
 ## Completed preparation
 
@@ -26,8 +26,8 @@ The owner approved the plan and TP-00. The inherited application now builds/publ
 
 | ID | Status | Evidence / next gate |
 |---|---|---|
-| TP-00 | Completed; owner review pending | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
-| TP-01 | Not started | Persistent local host and shared contracts |
+| TP-00 | Completed; owner authorized continuation | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
+| TP-01 | Implemented; final verification in progress | Fake host/contracts/SQLite; 29 tests and separate-process restart/backup/restore passed locally |
 | TP-02 | Not started | Read-only bridge and reliable telemetry |
 | TP-03 | Not started | Desktop/paired-phone dashboard |
 | TP-04 | Not started | Coordinated profiles and supported controls |
@@ -66,11 +66,23 @@ Dependency metadata gaps for HidSharpCore/NvAPIWrapper and embedded-module prove
 
 ## Checkout
 
-Permanent dedicated checkout: C:/Users/Asus/OneDrive/Documents/ChatGPT/ThermalPilot. Its own root and fork/upstream remotes are verified. The pushed TP-00 branch is checked out there and its locked build/publish was repeated successfully. Quickone remains untouched.
+Permanent dedicated checkout: C:/Users/Asus/OneDrive/Documents/ChatGPT/ThermalPilot. Its own root and fork/upstream remotes are verified. It currently contains TP-00; TP-01 synchronization and repeated checks are pending. Quickone remains untouched.
+
+## TP-01 evidence
+
+Scope: D-04/D-05 local host and shared contracts, fake adapter only. See [LOCAL_HOST.md](LOCAL_HOST.md) and [TP-01-EVIDENCE.md](TP-01-EVIDENCE.md).
+
+Passed in the implementation checkout: locked restore, Release build/publish, 29 unit/API/native-SQLite tests with no skips, C# formatting, PowerShell parsing and focused C#/API/build-script reviews. A malformed-backup JSON error path was fixed and regression-tested.
+
+Separate-process proof passed: a profile, simulated command and synthetic report survived abrupt owned-host termination, restart, backup and restoration to a fresh directory. Replaying the command preserved its ID and three audit events. Storage-full/read-only failures roll back transactions; no in-memory fallback reports success.
+
+The host binds loopback, requires a bearer token except for liveness, rejects browser Origin headers and accepts only typed simulation inputs. Hardware application/bridge, phone networking, schedules and AI are absent. Collection/cloud remain disabled. Retention values are recorded proposals without a sweeper; the SQLite main-file page budget is not a total-disk quota.
+
+Source commit, draft PR, dedicated-checkout proof and remote CI: pending final verification.
 
 ## Next owner gate
 
-Review TP-00/PR #2 before approving TP-01. TP-01 builds the fake-backed local host/contracts/SQLite slice and persistence evidence; it does not enable hardware writes, phone networking or cloud agents. Do not implement later phases unattended.
+Review TP-01 before approving TP-02. TP-02 must prove read-only bootstrap and telemetry under ADR-001 without initializing upstream control paths. Do not implement later phases unattended.
 
 ## Completion record for future phases
 
