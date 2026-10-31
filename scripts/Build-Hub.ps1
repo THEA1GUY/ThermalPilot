@@ -2,7 +2,8 @@
 
 [CmdletBinding()]
 param(
-    [string]$DotnetPath
+    [string]$DotnetPath,
+    [switch]$RequireAsusSensors
 )
 
 $ErrorActionPreference = 'Stop'
@@ -26,6 +27,6 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Hub publish failed.' }
     & $DotnetPath publish hub/ThermalPilot.Controller/ThermalPilot.Controller.csproj --configuration Release --no-build --no-restore --output artifacts/controller
     if ($LASTEXITCODE -ne 0) { throw 'Controller publish failed.' }
-    & (Join-Path $PSScriptRoot 'Verify-LiveBridge.ps1') -DotnetPath $DotnetPath -HostAssembly (Join-Path $repoRoot 'artifacts/hub/ThermalPilot.Host.dll') -ControllerAssembly (Join-Path $repoRoot 'artifacts/controller/ThermalPilot.Controller.dll')
+    & (Join-Path $PSScriptRoot 'Verify-LiveBridge.ps1') -DotnetPath $DotnetPath -HostAssembly (Join-Path $repoRoot 'artifacts/hub/ThermalPilot.Host.dll') -ControllerAssembly (Join-Path $repoRoot 'artifacts/controller/ThermalPilot.Controller.dll') -RequireAsusSensors:$RequireAsusSensors
 }
 finally { Pop-Location }

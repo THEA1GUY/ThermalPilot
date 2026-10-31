@@ -10,6 +10,8 @@ Use the pinned SDK and PowerShell 7.4+. Build-Hub.ps1 runs SQLite/API/protocol c
 
 The acceptance script refuses to run if a controller already exists. Stop only a controller you started before invoking it. It never terminates G-Helper or takes ownership of an existing controller.
 
+On the target ASUS laptop, use ./scripts/Build-Hub.ps1 -RequireAsusSensors to require an actual fresh ASUS CPU-temperature result in addition to native Windows readings. CI omits that switch because its runner is not the target ASUS machine.
+
 Host and controller are separate foreground applications, normally started in two terminals:
 
 ```powershell
@@ -37,6 +39,18 @@ The native handle uses the driver's existing shared-open convention. Its only De
 The version-1 named pipe is scoped to the Windows user SID and interactive session. Its explicit protected ACL permits that user and denies NETWORK identities. A local singleton prevents duplicate controllers. Frames are length-prefixed and limited to 32768 bytes, strict JSON, a four-second request deadline and only handshake/snapshot operations. Every response declares readOnly and hardwareWritesEnabled=false. Local same-user malicious software remains outside this boundary.
 
 The host validates the protocol/capabilities/sensor identities and rejects synthetic or invalid readings. It reconnects with bounded timeouts/backoff without launching, killing or taking over a controller.
+
+```mermaid
+flowchart LR
+  A["ASUS DSTS sensor reads"] --> C["Read-only controller"]
+  B["Windows native queries"] --> C
+  C -->|"Owner/session pipe: handshake + snapshot"| H["Loopback host"]
+  H --> D[("SQLite raw history + gaps")]
+  H --> L["Authenticated local tools"]
+  G["Existing G-Helper writer"]
+```
+
+The existing G-Helper writer is independent. ThermalPilot does not signal its exit event, call its bootstrap or change its configuration.
 
 ## Sources and meaning
 

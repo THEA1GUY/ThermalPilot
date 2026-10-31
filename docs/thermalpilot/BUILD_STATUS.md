@@ -45,7 +45,7 @@ Every checkpoint requires owner review before the next one. See IMPLEMENTATION_P
 ## Known gaps and pending decisions
 
 - SDK 10.0.403 is installed in ThermalPilot's per-user tools directory and pinned by root global.json. System-wide .NET 9.0.301 remains unchanged.
-- Hardware identity is known, but sensor support, available controls, existing controller/service versions and actual baseline performance are not yet verified.
+- Hardware identity and the read-only sensor subset are observed. Available controls, additional providers and actual baseline performance still require their respective checkpoints.
 - ADR-001 accepts a per-user host and narrow controller bridge, with required read-only extraction and writer-coordination proofs still gated in TP-02/04.
 - Windows/personal use/SQLite, .NET 10/React strict TypeScript, LAN-first phone design and user-session lifecycle are accepted with plan approval. Collection and cloud remain off; retention proposals and action permissions must be implemented/verified before enabling them.
 - DeepSeek key, model and spending limit are not configured.
