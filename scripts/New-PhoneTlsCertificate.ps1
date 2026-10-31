@@ -61,7 +61,7 @@ try {
     foreach ($address in $addresses) { $subjectNames.AddIpAddress($address) }
     $serverRequest.CertificateExtensions.Add($subjectNames.Build($true))
     $serverCertificate = $serverRequest.Create($caCertificate, $now.AddMinutes(-5), $now.AddDays(180), [System.Security.Cryptography.RandomNumberGenerator]::GetBytes(16))
-    $serverWithKey = $serverCertificate.CopyWithPrivateKey($serverKey)
+    $serverWithKey = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::CopyWithPrivateKey($serverCertificate, $serverKey)
 
     $securePassword = Read-Host 'Create a password for the local HTTPS PFX file' -AsSecureString
     if ($securePassword.Length -lt 16) { throw 'Use a PFX password with at least 16 characters.' }
