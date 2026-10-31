@@ -4,7 +4,7 @@ Updated: 31 October 2026, Africa/Lagos.
 
 ## Resume point
 
-**TP-03 implementation is in progress; Android device acceptance is pending.** TP-00 through TP-02 remain completed and awaiting owner review. No TP-04 work has started.
+**TP-04 is in progress; the owner has paused Android phone acceptance.** TP-00 through TP-02 remain completed and awaiting owner review. TP-03's desktop dashboard and host checks passed; Android certificate trust, pairing, phone history/revocation and touch acceptance remain unverified by the owner's request. TP-04 currently covers saved profile authoring and remains short of coordinated hardware activation.
 
 The owner accepted TP-01 and authorized TP-02 with an explicit no-simulation requirement. A separate read-only controller and host have sampled and persisted actual laptop measurements; runtime simulation producers are removed. The inherited application entry point remains inert. No benchmark, hardware profile change, schedule execution or cloud-agent invocation has been run.
 
@@ -29,8 +29,8 @@ The owner accepted TP-01 and authorized TP-02 with an explicit no-simulation req
 | TP-00 | Completed; owner authorized continuation | Local and dedicated-checkout locked builds/publishes, metadata guards, focused reviews and remote CI passed; draft PR #2 |
 | TP-01 | Completed; owner authorized continuation | Historical storage foundation; 29 tests and recovery checks passed; draft PR #3 |
 | TP-02 | Completed; owner review pending | Actual ASUS/Windows readings; 30-minute final-version laptop run; 27 tests; ASUS-required recovery checks and CI passed; draft PR #4 |
-| TP-03 | In progress; implementation and PC checks passed, owner Android acceptance pending | Dashboard, owner collection toggle, incident/history views, LAN HTTPS pairing/revocation; see [DASHBOARD.md](DASHBOARD.md) |
-| TP-04 | Not started | Coordinated profiles and supported controls |
+| TP-03 | Desktop implementation and PC checks passed; Android acceptance paused by owner | Dashboard, owner collection toggle, incident/history views, LAN HTTPS pairing/revocation; see [DASHBOARD.md](DASHBOARD.md). Do not claim phone acceptance. |
+| TP-04 | In progress; saved profile authoring implemented, hardware activation gate pending | Typed create/clone/version/import/export, durable version history, dashboard catalog, and an explicit unavailable activation preview. Hardware-write coordination and device acceptance remain required before any profile can be applied. |
 | TP-05 | Not started | Persistent schedules and temporary profiles |
 | TP-06 | Not started | Workload rules, diagnosis and flight recorder |
 | TP-07 | Not started | Codex MCP workflows |
@@ -95,6 +95,16 @@ Owner acceptance is still required on the actual Android phone: install and trus
 Pushed checkpoint: `e7c6550ab04fb1685f0b49b3bed6ac0e6ffe71b9` on `origin/codex/tp-03-dashboard`, stacked on `codex/tp-02-readonly-telemetry`. The connected GitHub integration initially returned HTTP 403 for PR creation; after refreshing the GitHub CLI login, [draft PR #5](https://github.com/THEA1GUY/ThermalPilot/pull/5) was opened against TP-02.
 
 The permanent checkout was synced to this branch. Its dashboard build passed, but the .NET build stopped before tests/sensor checks because Windows denied writes to ignored `obj` cache files (`MSB3491`/`UnauthorizedAccessException`), including on retry with elevated execution. The full ASUS-required build/test/recovery run passed in the isolated implementation checkout above; no permanent-checkout pass is claimed.
+
+## TP-04 progress
+
+The owner asked to pause the Android issue and continue with the rest of the build. This authorizes beginning TP-04 while leaving TP-03 Android acceptance pending; it does not waive any hardware or phone acceptance gates.
+
+Implemented the saved-profile authoring slice: strict typed profile archives; create/clone and immutable mode-version records; export/import; SQLite schema v5 with transactional migration and a backfilled current version for existing profiles; owner-only mutation enforced by the existing paired-phone read-only middleware; dashboard profile catalog/history/import/export/preview. Activation previews always state that activation is unavailable until writer coordination and device acceptance. No hardware command is emitted and no profile has been applied. This slice adds no synthetic telemetry or simulated device outcomes.
+
+Validation in the isolated TP-04 checkout: pinned .NET SDK 10.0.403 test run passed all 38 host/storage tests, including profile persistence across reopening, schema migration, clone/version history, import/export, paired-phone restrictions and unavailable activation preview. `npm.cmd run build` passed strict TypeScript and Vite production bundling. The generated static bundle was restored after validation because the owner's existing host is still running the older API; deploying this UI requires a later coordinated host restart. No actual-device profile activation, restore, benchmark or phone acceptance was attempted. Continue TP-04 with the single-writer design and supported-control proof before enabling any hardware action.
+
+Review branch: `codex/tp-04-profile-authoring`; implementation commit `06a0e16f0ffa46ac7883069e291193e57a2abaa6` is pushed to the owner's fork. [Draft PR #6](https://github.com/THEA1GUY/ThermalPilot/pull/6) targets `codex/tp-03-dashboard`; GitHub CI is pending. The PR is open and unmerged; owner review remains pending.
 
 ## Next owner gate
 

@@ -7,13 +7,18 @@ public enum AdapterMode { Fake, ReadOnlyBridge }
 public enum ProfileMode { Silent, Balanced, Turbo }
 public enum CommandOutcome { Simulated }
 public enum MeasurementQuality { Unavailable, Synthetic, Fresh, Stale, Unsupported }
-public enum EventKind { ProfileCreated, CommandSimulated, SyntheticReportCreated, IncidentMarked, PhonePaired, PhoneRevoked, CollectionPreferenceChanged }
+public enum EventKind { ProfileCreated, ProfileCloned, ProfileVersionCreated, CommandSimulated, SyntheticReportCreated, IncidentMarked, PhonePaired, PhoneRevoked, CollectionPreferenceChanged }
 
 public sealed record DeviceCapabilities(AdapterMode Adapter, bool HardwareConnected, bool HardwareWritesEnabled, bool LiveSensorsAvailable, string[] SupportedCommands);
 public sealed record HostStatus(int ContractVersion, int SchemaVersion, AdapterMode Adapter, bool IsSynthetic, bool CloudEnabled, bool CollectionEnabled, bool PhoneAccessEnabled);
 public sealed record RetentionPolicy(bool CollectionEnabled, int RawHours, int AggregateDays, int ReportDays, int TelemetryBudgetMiB, bool CloudEnabled, decimal CloudBudget);
 
 public sealed record CreateProfileRequest(string Name, ProfileMode BaseMode);
+public sealed record CloneProfileRequest(string Name);
+public sealed record CreateProfileVersionRequest(ProfileMode BaseMode);
+public sealed record ProfileArchive(int FormatVersion, string Name, ProfileMode BaseMode);
+public sealed record ProfileVersionRecord(Guid ProfileId, int Version, ProfileMode BaseMode, DateTimeOffset CreatedAtUtc);
+public sealed record ProfileActivationPreview(ProfileRecord Profile, bool CanActivate, bool HardwareWritesEnabled, string ReasonCode, string Explanation);
 public sealed record ProfileRecord(Guid Id, string Name, ProfileMode BaseMode, int Version, DateTimeOffset CreatedAtUtc);
 public sealed record CommandRecord(Guid Id, string IdempotencyKey, Guid CorrelationId, Guid ProfileId, int ProfileVersion, CommandOutcome Outcome, AdapterMode Adapter, bool IsSynthetic, bool HardwareChanged, DateTimeOffset CreatedAtUtc);
 public sealed record ReportRecord(Guid Id, string Title, string Body, bool IsSynthetic, AdapterMode Adapter, DateTimeOffset CreatedAtUtc);

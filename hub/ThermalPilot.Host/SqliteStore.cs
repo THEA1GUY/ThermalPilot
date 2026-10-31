@@ -9,7 +9,7 @@ namespace ThermalPilot.Host;
 
 public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clock)
 {
-    public const int SchemaVersion = 4;
+    public const int SchemaVersion = 5;
     public const int ApplicationId = 0x54504C54;
     public static RetentionPolicy DefaultPolicy { get; } = new(false, 72, 30, 90, 256, false, 0);
 
@@ -95,6 +95,36 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
                     """;
                 migration.ExecuteNonQuery();
             }
+            if (Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture) == 4)
+            {
+                AssertSchema(connection, 4);
+                using var transaction = connection.BeginTransaction(deferred: false);
+                using (var migration = Sql(connection, transaction, """
+                    CREATE TABLE profile_versions(
+                        profile_id TEXT NOT NULL REFERENCES profiles(id),
+                        version INTEGER NOT NULL CHECK(version > 0),
+                        document TEXT NOT NULL CHECK(json_valid(document)),
+                        PRIMARY KEY(profile_id, version));
+                    """))
+                    migration.ExecuteNonQuery();
+                using (var profiles = Sql(connection, transaction, "SELECT document FROM profiles;"))
+                using (var reader = profiles.ExecuteReader())
+                {
+                    List<ProfileVersionRecord> versions = [];
+                    while (reader.Read())
+                    {
+                        var profile = Deserialize<ProfileRecord>(reader.GetString(0));
+                        versions.Add(new ProfileVersionRecord(profile.Id, profile.Version, profile.BaseMode, profile.CreatedAtUtc));
+                    }
+                    foreach (var profileVersion in versions)
+                        InsertProfileVersion(connection, transaction, profileVersion);
+                }
+                using (var ledger = Sql(connection, transaction,
+                           "INSERT INTO schema_migrations VALUES(5, $now); PRAGMA user_version=5;",
+                           ("$now", clock.GetUtcNow().ToString("O"))))
+                    ledger.ExecuteNonQuery();
+                transaction.Commit();
+            }
             AssertCurrent(connection);
             using var wal = Sql(connection, null, "PRAGMA journal_mode = WAL;");
             if (!string.Equals(Convert.ToString(wal.ExecuteScalar(), CultureInfo.InvariantCulture), "wal", StringComparison.OrdinalIgnoreCase))
@@ -107,10 +137,12 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
     {
         Validation.Profile(request);
         var profile = new ProfileRecord(Guid.NewGuid(), request.Name.Trim(), request.BaseMode, 1, clock.GetUtcNow());
+        var version = new ProfileVersionRecord(profile.Id, profile.Version, profile.BaseMode, profile.CreatedAtUtc);
         return Run(connection =>
         {
             using var transaction = connection.BeginTransaction(deferred: false);
             InsertDocument(connection, transaction, "INSERT INTO profiles(id, document) VALUES($id,$document);", profile.Id, profile);
+            InsertProfileVersion(connection, transaction, version);
             AppendEvent(connection, transaction, EventKind.ProfileCreated, profile.Id, Guid.NewGuid());
             transaction.Commit();
             return profile;
@@ -119,6 +151,67 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
 
     public ProfileRecord? GetProfile(Guid id) => ReadOne<ProfileRecord>("SELECT document FROM profiles WHERE id=$id;", id);
     public IReadOnlyList<ProfileRecord> ListProfiles() => ReadMany<ProfileRecord>("SELECT document FROM profiles ORDER BY rowid DESC LIMIT 100;");
+
+    public IReadOnlyList<ProfileVersionRecord> ListProfileVersions(Guid id) => Run(connection =>
+    {
+        var profileDocument = Scalar(connection, null, "SELECT document FROM profiles WHERE id=$id;", ("$id", id.ToString("D"))) as string;
+        if (profileDocument is null) return (IReadOnlyList<ProfileVersionRecord>)Array.Empty<ProfileVersionRecord>();
+        using var command = Sql(connection, null, "SELECT document FROM profile_versions WHERE profile_id=$id ORDER BY version;", ("$id", id.ToString("D")));
+        using var reader = command.ExecuteReader();
+        List<ProfileVersionRecord> versions = [];
+        while (reader.Read()) versions.Add(Deserialize<ProfileVersionRecord>(reader.GetString(0)));
+        if (versions.Count == 0)
+        {
+            var legacy = Deserialize<ProfileRecord>(profileDocument);
+            versions.Add(new ProfileVersionRecord(legacy.Id, legacy.Version, legacy.BaseMode, legacy.CreatedAtUtc));
+        }
+        return (IReadOnlyList<ProfileVersionRecord>)versions;
+    });
+
+    public ProfileRecord? CloneProfile(Guid id, CloneProfileRequest request)
+    {
+        Validation.CloneProfile(request);
+        return Run(connection =>
+        {
+            using var transaction = connection.BeginTransaction(deferred: false);
+            using var sourceQuery = Sql(connection, transaction, "SELECT document FROM profiles WHERE id=$id;", ("$id", id.ToString("D")));
+            var sourceDocument = sourceQuery.ExecuteScalar() as string;
+            if (sourceDocument is null) return null;
+            var source = Deserialize<ProfileRecord>(sourceDocument);
+            var clone = new ProfileRecord(Guid.NewGuid(), request.Name.Trim(), source.BaseMode, 1, clock.GetUtcNow());
+            var version = new ProfileVersionRecord(clone.Id, clone.Version, clone.BaseMode, clone.CreatedAtUtc);
+            InsertDocument(connection, transaction, "INSERT INTO profiles(id, document) VALUES($id,$document);", clone.Id, clone);
+            InsertProfileVersion(connection, transaction, version);
+            AppendEvent(connection, transaction, EventKind.ProfileCloned, clone.Id, Guid.NewGuid());
+            transaction.Commit();
+            return clone;
+        });
+    }
+
+    public ProfileRecord? CreateProfileVersion(Guid id, CreateProfileVersionRequest request)
+    {
+        Validation.ProfileVersion(request);
+        return Run(connection =>
+        {
+            using var transaction = connection.BeginTransaction(deferred: false);
+            using var profileQuery = Sql(connection, transaction, "SELECT document FROM profiles WHERE id=$id;", ("$id", id.ToString("D")));
+            var document = profileQuery.ExecuteScalar() as string;
+            if (document is null) return null;
+            var profile = Deserialize<ProfileRecord>(document);
+            if (profile.BaseMode == request.BaseMode)
+                throw new RequestFailure("profile_version_unchanged", "Choose a different supported base mode to create a new version.", 409);
+            var now = clock.GetUtcNow();
+            var updated = profile with { BaseMode = request.BaseMode, Version = checked(profile.Version + 1) };
+            var version = new ProfileVersionRecord(id, updated.Version, updated.BaseMode, now);
+            InsertProfileVersion(connection, transaction, version);
+            using (var update = Sql(connection, transaction, "UPDATE profiles SET document=$document WHERE id=$id;",
+                       ("$document", JsonSerializer.Serialize(updated, ContractJson.Options)), ("$id", id.ToString("D"))))
+                update.ExecuteNonQuery();
+            AppendEvent(connection, transaction, EventKind.ProfileVersionCreated, id, Guid.NewGuid());
+            transaction.Commit();
+            return updated;
+        });
+    }
 
     public CommandRecord? GetCommand(Guid id) => ReadOne<CommandRecord>("SELECT document FROM commands WHERE id=$id;", id);
     public IReadOnlyList<CommandRecord> ListCommands() => ReadMany<CommandRecord>("SELECT document FROM commands ORDER BY rowid DESC LIMIT 100;");
@@ -273,7 +366,7 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
     public static void AssertSupported(SqliteConnection connection)
     {
         var version = Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture);
-        if (version is not (1 or 2 or 3 or SchemaVersion)) throw new InvalidDataException("Unsupported backup schema.");
+        if (version is not (1 or 2 or 3 or 4 or SchemaVersion)) throw new InvalidDataException("Unsupported backup schema.");
         AssertSchema(connection, version);
     }
 
@@ -287,9 +380,10 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
             throw new InvalidDataException("Database integrity check failed.");
         var tables = Convert.ToInt64(Scalar(connection, null, """
             SELECT count(*) FROM sqlite_schema WHERE type='table'
-            AND name IN ('schema_migrations','profiles','commands','reports','events','preferences');
+            AND name IN ('schema_migrations','profiles','commands','reports','events','preferences','profile_versions');
             """), CultureInfo.InvariantCulture);
-        if (tables != 6 || Convert.ToInt64(Scalar(connection, null, "SELECT max(version) FROM schema_migrations;"), CultureInfo.InvariantCulture) != expectedVersion)
+        var expectedTables = expectedVersion >= 5 ? 7 : 6;
+        if (tables != expectedTables || Convert.ToInt64(Scalar(connection, null, "SELECT max(version) FROM schema_migrations;"), CultureInfo.InvariantCulture) != expectedVersion)
             throw new InvalidDataException("The migration ledger is inconsistent.");
         if (expectedVersion >= 2 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('telemetry','telemetry_gaps');") != 2)
             throw new InvalidDataException("Telemetry migration is incomplete.");
@@ -297,6 +391,8 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
             throw new InvalidDataException("Incident migration is incomplete.");
         if (expectedVersion >= 4 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='paired_clients';") != 1)
             throw new InvalidDataException("Phone pairing migration is incomplete.");
+        if (expectedVersion >= 5 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='profile_versions';") != 1)
+            throw new InvalidDataException("Profile version migration is incomplete.");
         ReadPolicy(connection);
     }
 
@@ -318,6 +414,15 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
     private static void InsertDocument<T>(SqliteConnection connection, SqliteTransaction transaction, string sql, Guid id, T value)
     {
         using var command = Sql(connection, transaction, sql, ("$id", id.ToString("D")), ("$document", JsonSerializer.Serialize(value, ContractJson.Options)));
+        command.ExecuteNonQuery();
+    }
+
+    private static void InsertProfileVersion(SqliteConnection connection, SqliteTransaction transaction, ProfileVersionRecord version)
+    {
+        using var command = Sql(connection, transaction,
+            "INSERT INTO profile_versions(profile_id, version, document) VALUES($id, $version, $document);",
+            ("$id", version.ProfileId.ToString("D")), ("$version", version.Version),
+            ("$document", JsonSerializer.Serialize(version, ContractJson.Options)));
         command.ExecuteNonQuery();
     }
 

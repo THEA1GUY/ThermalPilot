@@ -197,6 +197,31 @@ public static class HubApplication
             app.Logger.LogInformation("Profile {ProfileId} saved; hardware application is disabled", profile.Id);
             return Results.Created("/v1/profiles/" + profile.Id, profile);
         });
+        app.MapPost("/v1/profiles/import", (ProfileArchive archive, SqliteStore store) =>
+        {
+            Validation.ProfileArchive(archive);
+            var profile = store.CreateProfile(new CreateProfileRequest(archive.Name, archive.BaseMode));
+            return Results.Created("/v1/profiles/" + profile.Id, profile);
+        });
+        app.MapPost("/v1/profiles/{id:guid}/clone", (Guid id, CloneProfileRequest request, SqliteStore store) =>
+            store.CloneProfile(id, request) is { } clone
+                ? Results.Created("/v1/profiles/" + clone.Id, clone)
+                : Results.NotFound());
+        app.MapGet("/v1/profiles/{id:guid}/versions", (Guid id, SqliteStore store) =>
+            store.GetProfile(id) is null ? Results.NotFound() : Results.Ok(store.ListProfileVersions(id)));
+        app.MapPost("/v1/profiles/{id:guid}/versions", (Guid id, CreateProfileVersionRequest request, SqliteStore store) =>
+            store.CreateProfileVersion(id, request) is { } version
+                ? Results.Ok(version)
+                : Results.NotFound());
+        app.MapGet("/v1/profiles/{id:guid}/export", (Guid id, SqliteStore store) =>
+            store.GetProfile(id) is { } profile
+                ? Results.Ok(new ProfileArchive(1, profile.Name, profile.BaseMode))
+                : Results.NotFound());
+        app.MapGet("/v1/profiles/{id:guid}/activation-preview", (Guid id, SqliteStore store) =>
+            store.GetProfile(id) is { } profile
+                ? Results.Ok(new ProfileActivationPreview(profile, false, false, "single_writer_coordinator_required",
+                    "This profile is saved only. Activation is disabled until all G-Helper and ThermalPilot hardware writers are coordinated and device acceptance is complete."))
+                : Results.NotFound());
         app.MapGet("/v1/commands", (SqliteStore store) => store.ListCommands());
         app.MapGet("/v1/commands/{id:guid}", (Guid id, SqliteStore store) =>
             store.GetCommand(id) is { } command ? Results.Ok(command) : Results.NotFound());
