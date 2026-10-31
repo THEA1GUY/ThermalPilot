@@ -11,7 +11,7 @@ public static class DatabaseMaintenance
         if (!File.Exists(new SqliteConnections(dataDirectory).DatabasePath))
             throw new RequestFailure("database_not_found", "An existing database is required for backup.", 404);
         using var lease = new DatabaseLease(dataDirectory);
-        var store = new SqliteStore(new SqliteConnections(dataDirectory), TimeProvider.System, new FakeAdapter());
+        var store = new SqliteStore(new SqliteConnections(dataDirectory), TimeProvider.System);
         store.Initialize();
         store.Backup(destination);
         return store.Summary();
@@ -36,13 +36,22 @@ public static class DatabaseMaintenance
             using (var destination = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = temporary, Pooling = false }.ToString()))
             {
                 source.Open();
-                SqliteStore.AssertCurrent(source);
+                SqliteStore.AssertSupported(source);
                 destination.Open();
                 source.BackupDatabase(destination);
-                SqliteStore.AssertCurrent(destination);
+                SqliteStore.AssertSupported(destination);
+            }
+            var staging = new StagingConnections(temporary);
+            new SqliteStore(staging, TimeProvider.System).Initialize();
+            using (var validated = staging.Open())
+            {
+                SqliteStore.AssertCurrent(validated);
+                using var checkpoint = validated.CreateCommand();
+                checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE); PRAGMA journal_mode=DELETE;";
+                checkpoint.ExecuteNonQuery();
             }
             File.Move(temporary, connections.DatabasePath, overwrite: false);
-            var restored = new SqliteStore(connections, TimeProvider.System, new FakeAdapter());
+            var restored = new SqliteStore(connections, TimeProvider.System);
             restored.Initialize();
             restored.GetPolicy();
             return restored.Summary();
@@ -62,5 +71,17 @@ public static class DatabaseMaintenance
         if (Directory.Exists(dataDirectory) && Directory.EnumerateFileSystemEntries(dataDirectory)
             .Any(path => Path.GetFileName(path) != "host.lock" || !File.Exists(path)))
             throw new RequestFailure("restore_target_exists", "Restore requires a fresh data directory; the original database is preserved.", 409);
+    }
+
+    private sealed class StagingConnections(string path) : ISqliteConnections
+    {
+        public string DatabasePath => path;
+        public SqliteConnection Open()
+        {
+            var connection = new SqliteConnection(new SqliteConnectionStringBuilder
+            { DataSource = path, Mode = SqliteOpenMode.ReadWrite, Pooling = false, ForeignKeys = true }.ToString());
+            connection.Open();
+            return connection;
+        }
     }
 }

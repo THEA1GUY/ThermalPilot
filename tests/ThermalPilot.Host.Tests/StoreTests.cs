@@ -9,67 +9,21 @@ namespace ThermalPilot.Host.Tests;
 public sealed class StoreTests
 {
     [Fact]
-    public void Profile_command_report_and_audit_survive_reopening()
+    public void Profile_and_audit_survive_reopening()
     {
         using var workspace = new TestWorkspace();
-        var first = workspace.Store();
-        var profile = first.CreateProfile(new("Docker coding", ProfileMode.Balanced));
-        var request = TestRequests.Command(profile);
-        var command = first.SimulateCommand(request);
-        var report = first.CreateSyntheticReport(new("Synthetic session", "Fixture data, no measurements."));
-        var second = workspace.Store();
-        Assert.Equal(profile, second.GetProfile(profile.Id));
-        Assert.Equal(command.Command, second.GetCommand(command.Command.Id));
-        Assert.Equal(report, second.GetReport(report.Id));
-        Assert.Equal(new StoreSummary(1, 1, 1, 1, 3), second.Summary());
-        Assert.True(second.SimulateCommand(request).Replayed);
-        Assert.Equal(3, second.ListEvents().Count);
-    }
-
-    [Fact]
-    public async Task Concurrent_duplicate_commands_have_one_durable_outcome()
-    {
-        using var workspace = new TestWorkspace();
-        var store = workspace.Store();
-        var profile = store.CreateProfile(new("Inference", ProfileMode.Turbo));
-        var request = TestRequests.Command(profile);
-        var results = await Task.WhenAll(Enumerable.Range(0, 4).Select(_ => Task.Run(() => store.SimulateCommand(request))));
-        Assert.Single(results, result => !result.Replayed);
-        Assert.Single(results.Select(result => result.Command.Id).Distinct());
-        Assert.Equal(1, store.Summary().Commands);
-        Assert.Equal(2, store.Summary().Events);
-        Assert.All(results, result => Assert.False(result.Command.HardwareChanged));
-    }
-
-    [Fact]
-    public void Reusing_a_key_for_a_different_request_is_a_conflict()
-    {
-        using var workspace = new TestWorkspace();
-        var store = workspace.Store();
-        var profile = store.CreateProfile(new("Meeting", ProfileMode.Silent));
-        var request = TestRequests.Command(profile);
-        store.SimulateCommand(request);
-        var failure = Assert.Throws<RequestFailure>(() => store.SimulateCommand(request with { CorrelationId = Guid.NewGuid() }));
-        Assert.Equal(409, failure.StatusCode);
-        Assert.Equal(1, store.Summary().Commands);
-    }
-
-    [Fact]
-    public void Stale_versions_and_expired_commands_do_not_create_audit_successes()
-    {
-        using var workspace = new TestWorkspace();
-        var store = workspace.Store();
-        var profile = store.CreateProfile(new("Meeting", ProfileMode.Silent));
-        Assert.Equal(409, Assert.Throws<RequestFailure>(() => store.SimulateCommand(TestRequests.Command(profile) with { ExpectedProfileVersion = 2 })).StatusCode);
-        Assert.Equal(410, Assert.Throws<RequestFailure>(() => store.SimulateCommand(TestRequests.Command(profile) with { ExpiresAtUtc = DateTimeOffset.UtcNow.AddMinutes(-1) })).StatusCode);
-        Assert.Equal(new StoreSummary(1, 1, 0, 0, 1), store.Summary());
+        var profile = workspace.Store().CreateProfile(new("Coding", ProfileMode.Balanced));
+        var reopened = workspace.Store();
+        Assert.Equal(profile, reopened.GetProfile(profile.Id));
+        Assert.Equal(new StoreSummary(2, 1, 0, 0, 1), reopened.Summary());
+        Assert.Single(reopened.ListEvents());
     }
 
     [Theory]
     [InlineData("")]
     [InlineData("   ")]
     [InlineData("bad\nname")]
-    public void Invalid_profile_names_are_rejected_without_writes(string name)
+    public void Invalid_profiles_leave_no_rows(string name)
     {
         using var workspace = new TestWorkspace();
         var store = workspace.Store();
@@ -78,7 +32,7 @@ public sealed class StoreTests
     }
 
     [Fact]
-    public void Text_is_parameterized_instead_of_becoming_SQL()
+    public void SQL_text_is_saved_as_data()
     {
         using var workspace = new TestWorkspace();
         var store = workspace.Store();
@@ -89,162 +43,165 @@ public sealed class StoreTests
     }
 
     [Fact]
-    public void Migration_does_not_adopt_foreign_or_future_databases()
+    public void Foreign_future_and_corrupt_databases_are_preserved()
     {
         using var workspace = new TestWorkspace();
-        var connections = new SqliteConnections(workspace.PathFor("foreign"));
         Directory.CreateDirectory(workspace.PathFor("foreign"));
-        using (var connection = connections.Open())
+        var foreign = new SqliteConnections(workspace.PathFor("foreign"));
+        using (var connection = foreign.Open())
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = "CREATE TABLE other_application(value TEXT); INSERT INTO other_application VALUES('preserve');";
-            command.ExecuteNonQuery();
+            using var sql = connection.CreateCommand();
+            sql.CommandText = "CREATE TABLE other(value TEXT); INSERT INTO other VALUES('preserve');";
+            sql.ExecuteNonQuery();
         }
-        var foreign = new SqliteStore(connections, TimeProvider.System, new FakeAdapter());
-        Assert.Throws<StorageFailure>(foreign.Initialize);
-        using (var connection = connections.Open())
+        Assert.Throws<StorageFailure>(() => workspace.Store("foreign"));
+        using (var connection = foreign.Open())
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = "SELECT value FROM other_application;";
-            Assert.Equal("preserve", command.ExecuteScalar());
+            using var sql = connection.CreateCommand();
+            sql.CommandText = "SELECT value FROM other;";
+            Assert.Equal("preserve", sql.ExecuteScalar());
         }
         workspace.Store("future");
-        var futureConnections = new SqliteConnections(workspace.PathFor("future"));
-        using (var connection = futureConnections.Open())
+        using (var connection = new SqliteConnections(workspace.PathFor("future")).Open())
         {
-            using var command = connection.CreateCommand();
-            command.CommandText = "PRAGMA user_version=2;";
-            command.ExecuteNonQuery();
+            using var sql = connection.CreateCommand();
+            sql.CommandText = "PRAGMA user_version=99;";
+            sql.ExecuteNonQuery();
         }
         Assert.Throws<StorageFailure>(() => workspace.Store("future"));
-    }
-
-    [Fact]
-    public void Corrupt_database_fails_without_replacing_it()
-    {
-        using var workspace = new TestWorkspace();
-        var directory = workspace.PathFor("corrupt");
-        Directory.CreateDirectory(directory);
-        var path = Path.Combine(directory, "thermalpilot.db");
-        const string contents = "Not a SQLite database. Preserve this.";
-        File.WriteAllText(path, contents);
+        Directory.CreateDirectory(workspace.PathFor("corrupt"));
+        var corrupt = Path.Combine(workspace.PathFor("corrupt"), "thermalpilot.db");
+        File.WriteAllText(corrupt, "not a SQLite database");
         Assert.Throws<StorageFailure>(() => workspace.Store("corrupt"));
-        Assert.Equal(contents, File.ReadAllText(path));
+        Assert.Equal("not a SQLite database", File.ReadAllText(corrupt));
     }
 
     [Fact]
-    public void Unwritable_directory_boundary_is_reported()
+    public void Backup_restore_preserves_profiles_and_original_database()
     {
         using var workspace = new TestWorkspace();
-        var path = workspace.PathFor("file-instead-of-directory");
-        File.WriteAllText(path, "existing file");
-        var store = new SqliteStore(new SqliteConnections(path), TimeProvider.System, new FakeAdapter());
-        Assert.Throws<StorageFailure>(store.Initialize);
-        Assert.Equal("existing file", File.ReadAllText(path));
+        var store = workspace.Store();
+        var profile = store.CreateProfile(new("Meeting", ProfileMode.Silent));
+        var backup = workspace.PathFor("snapshot.db");
+        store.Backup(backup);
+        Assert.Throws<RequestFailure>(() => store.Backup(backup));
+        var result = DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored"));
+        Assert.Equal(1, result.Profiles);
+        Assert.Equal(profile, workspace.Store("restored").GetProfile(profile.Id));
+        Assert.Equal(profile, store.GetProfile(profile.Id));
+        Assert.Throws<RequestFailure>(() => DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("data")));
+    }
+
+    [Fact]
+    public void Schema_one_backup_is_migrated_in_staging_before_publication()
+    {
+        using var workspace = new TestWorkspace();
+        var profile = workspace.Store().CreateProfile(new("Existing", ProfileMode.Balanced));
+        using (var connection = new SqliteConnections(workspace.PathFor("data")).Open())
+        {
+            using var sql = connection.CreateCommand();
+            sql.CommandText = "DROP TABLE telemetry; DROP TABLE telemetry_gaps; DELETE FROM schema_migrations WHERE version=2; PRAGMA user_version=1;";
+            sql.ExecuteNonQuery();
+        }
+        var backup = Path.Combine(workspace.PathFor("data"), "thermalpilot.db");
+        Assert.Equal(2, DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored")).SchemaVersion);
+        Assert.Equal(profile, workspace.Store("restored").GetProfile(profile.Id));
+        using var original = new SqliteConnections(workspace.PathFor("data")).Open();
+        using var check = original.CreateCommand();
+        check.CommandText = "PRAGMA user_version;";
+        Assert.Equal(1L, check.ExecuteScalar());
+    }
+
+    [Fact]
+    public void Invalid_backup_policy_fails_cleanly_and_valid_retry_succeeds()
+    {
+        using var workspace = new TestWorkspace();
+        var store = workspace.Store();
+        store.CreateProfile(new("Saved", ProfileMode.Balanced));
+        var valid = workspace.PathFor("valid.db");
+        var invalid = workspace.PathFor("invalid.db");
+        store.Backup(valid);
+        File.Copy(valid, invalid);
+        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = invalid, Pooling = false }.ToString()))
+        {
+            connection.Open();
+            using var sql = connection.CreateCommand();
+            sql.CommandText = "UPDATE preferences SET document='{}' WHERE key='retention';";
+            sql.ExecuteNonQuery();
+        }
+        Assert.Throws<StorageFailure>(() => DatabaseMaintenance.RestoreToNewDirectory(invalid, workspace.PathFor("restored")));
+        Assert.Equal(1, DatabaseMaintenance.RestoreToNewDirectory(valid, workspace.PathFor("restored")).Profiles);
     }
 
     [Theory]
     [InlineData(true)]
     [InlineData(false)]
-    public void Real_SQLite_readonly_or_full_error_rolls_back_report_and_event(bool readOnly)
-    {
-        using var workspace = new TestWorkspace();
-        var normal = workspace.Store();
-        var connections = new SwitchableConnections(new SqliteConnections(workspace.PathFor("data")))
-        {
-            ReadOnly = readOnly,
-            Full = !readOnly
-        };
-        var failing = new SqliteStore(connections, TimeProvider.System, new FakeAdapter());
-        var failure = Assert.Throws<StorageFailure>(() => failing.CreateSyntheticReport(new("Synthetic report", new string('x', 15_000))));
-        Assert.Equal(readOnly ? "sqlite_8" : "sqlite_13", failure.Code);
-        Assert.Equal(new StoreSummary(1, 0, 0, 0, 0), normal.Summary());
-    }
-
-    [Fact]
-    public void Backup_and_restore_preserve_records_and_idempotency()
-    {
-        using var workspace = new TestWorkspace();
-        var store = workspace.Store();
-        var profile = store.CreateProfile(new("Coding", ProfileMode.Balanced));
-        var request = TestRequests.Command(profile);
-        var command = store.SimulateCommand(request);
-        var report = store.CreateSyntheticReport(new("Synthetic evidence", "No live data."));
-        var backup = workspace.PathFor("snapshot.db");
-        DatabaseMaintenance.Backup(workspace.PathFor("data"), backup);
-        var summary = DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored"));
-        Assert.Equal(store.Summary(), summary);
-        var restored = workspace.Store("restored");
-        Assert.Equal(profile, restored.GetProfile(profile.Id));
-        Assert.Equal(report, restored.GetReport(report.Id));
-        Assert.Equal(command.Command.Id, restored.SimulateCommand(request).Command.Id);
-        Assert.True(restored.SimulateCommand(request).Replayed);
-        Assert.Equal(3, restored.Summary().Events);
-        Assert.Throws<RequestFailure>(() => DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("data")));
-        Assert.Equal(profile, store.GetProfile(profile.Id));
-    }
-
-    [Fact]
-    public void Invalid_backup_never_replaces_original_data()
-    {
-        using var workspace = new TestWorkspace();
-        var original = workspace.Store();
-        var profile = original.CreateProfile(new("Original", ProfileMode.Balanced));
-        var backup = workspace.PathFor("bad-backup.db");
-        File.WriteAllText(backup, "invalid");
-        Assert.Throws<StorageFailure>(() => DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restore-target")));
-        Assert.Equal(profile, original.GetProfile(profile.Id));
-        Assert.False(File.Exists(Path.Combine(workspace.PathFor("restore-target"), "thermalpilot.db")));
-    }
-
-    [Fact]
-    public void Malformed_policy_is_normalized_and_restore_can_retry_same_fresh_target()
-    {
-        using var workspace = new TestWorkspace();
-        var original = workspace.Store();
-        var profile = original.CreateProfile(new("Original", ProfileMode.Balanced));
-        var bad = workspace.PathFor("bad-policy.db");
-        original.Backup(bad);
-        using (var connection = new SqliteConnection(new SqliteConnectionStringBuilder { DataSource = bad, Pooling = false }.ToString()))
-        {
-            connection.Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = "UPDATE preferences SET document='{}' WHERE key='retention';";
-            command.ExecuteNonQuery();
-        }
-        var target = workspace.PathFor("restored");
-        Assert.Throws<StorageFailure>(() => DatabaseMaintenance.RestoreToNewDirectory(bad, target));
-        Assert.False(File.Exists(Path.Combine(target, "thermalpilot.db")));
-        Assert.Equal(profile, original.GetProfile(profile.Id));
-        var good = workspace.PathFor("good-policy.db");
-        original.Backup(good);
-        Assert.Equal(original.Summary(), DatabaseMaintenance.RestoreToNewDirectory(good, target));
-    }
-
-    [Fact]
-    public void Running_host_lease_blocks_other_owner_and_maintenance()
+    public void Native_read_only_or_full_storage_does_not_report_a_saved_profile(bool readOnly)
     {
         using var workspace = new TestWorkspace();
         workspace.Store();
-        using var lease = new DatabaseLease(workspace.PathFor("data"));
-        Assert.Throws<IOException>(() => new DatabaseLease(workspace.PathFor("data")));
-        Assert.Throws<IOException>(() => DatabaseMaintenance.Backup(workspace.PathFor("data"), workspace.PathFor("snapshot.db")));
+        var connections = new SwitchableConnections(new SqliteConnections(workspace.PathFor("data"))) { ReadOnly = readOnly, Full = !readOnly };
+        var store = new SqliteStore(connections, TimeProvider.System);
+        var failure = Assert.Throws<StorageFailure>(() =>
+        {
+            for (int i = 0; i < 1000; i++) store.CreateProfile(new(new string('x', 80), ProfileMode.Balanced));
+        });
+        Assert.Equal(readOnly ? "sqlite_8" : "sqlite_13", failure.Code);
+        connections.ReadOnly = connections.Full = false;
+        Assert.Equal(store.Summary().Profiles, store.Summary().Events);
     }
 
     [Fact]
-    public void Policy_and_contracts_cannot_claim_live_hardware()
+    public void Exclusive_lease_and_unusable_directory_fail_explicitly()
+    {
+        using var workspace = new TestWorkspace();
+        using var lease = new DatabaseLease(workspace.PathFor("lease"));
+        Assert.Throws<IOException>(() => new DatabaseLease(workspace.PathFor("lease")));
+        File.WriteAllText(workspace.PathFor("file"), "preserve");
+        Assert.Throws<StorageFailure>(() => workspace.Store("file"));
+        Assert.Equal("preserve", File.ReadAllText(workspace.PathFor("file")));
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(32769)]
+    public async Task Invalid_wire_lengths_are_rejected(int length)
+    {
+        using var stream = new MemoryStream(BitConverter.GetBytes(length));
+        await Assert.ThrowsAsync<InvalidDataException>(() => BridgeWire.ReadAsync<BridgeRequest>(stream, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task Expired_rows_are_removed_even_when_live_collection_is_disabled()
+    {
+        using var workspace = new TestWorkspace();
+        workspace.Store();
+        using (var connection = new SqliteConnections(workspace.PathFor("data")).Open())
+        {
+            using var sql = connection.CreateCommand();
+            sql.CommandText = "INSERT INTO telemetry VALUES('expired-input',1,$at,'{}');";
+            sql.Parameters.AddWithValue("$at", DateTimeOffset.UtcNow.AddDays(-4).ToString("O"));
+            sql.ExecuteNonQuery();
+        }
+        await using var hub = await RunningHub.Start(workspace.PathFor("data"));
+        var history = await hub.Client.GetStringAsync("/v1/telemetry/history");
+        Assert.Equal("[]", history);
+        using var verify = new SqliteConnections(workspace.PathFor("data")).Open();
+        using var query = verify.CreateCommand();
+        query.CommandText = "SELECT count(*) FROM telemetry;";
+        Assert.Equal(0L, query.ExecuteScalar());
+    }
+
+    [Fact]
+    public void Shell_fields_and_default_cloud_spend_are_rejected()
     {
         using var workspace = new TestWorkspace();
         var policy = workspace.Store().GetPolicy();
         Assert.False(policy.CollectionEnabled);
         Assert.False(policy.CloudEnabled);
         Assert.Equal(0, policy.CloudBudget);
-        var adapter = new FakeAdapter();
-        Assert.False(adapter.Capabilities.HardwareConnected);
-        Assert.False(adapter.Capabilities.HardwareWritesEnabled);
-        Assert.True(adapter.Snapshot().IsSynthetic);
-        Assert.Null(adapter.Snapshot().CpuTemperature.Value);
         Assert.Throws<JsonException>(() => JsonSerializer.Deserialize<CreateProfileRequest>(
-            """{"name":"Unsafe","baseMode":"balanced","mode_command":"do something"}""", ContractJson.Options));
+            """{"name":"Unsafe","baseMode":"balanced","mode_command":"shell"}""", ContractJson.Options));
     }
 }

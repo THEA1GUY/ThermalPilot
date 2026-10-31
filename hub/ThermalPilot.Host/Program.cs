@@ -26,7 +26,8 @@ public static class Program
             }
             if (verb != "serve") throw new ArgumentException("Use serve, backup or restore.");
             var port = options.TryGetValue("--port", out var portText) ? int.Parse(portText, System.Globalization.CultureInfo.InvariantCulture) : 5127;
-            var settings = new HostSettings(dataDirectory, Environment.GetEnvironmentVariable("THERMALPILOT_API_TOKEN") ?? "", port);
+            var collect = options.TryGetValue("--collect", out var enabled) && bool.Parse(enabled);
+            var settings = new HostSettings(dataDirectory, Environment.GetEnvironmentVariable("THERMALPILOT_API_TOKEN") ?? "", port, CollectTelemetry: collect);
             await using var app = HubApplication.Build(settings);
             await app.RunAsync();
             return 0;
@@ -44,7 +45,7 @@ public static class Program
         Dictionary<string, string> options = new(StringComparer.Ordinal);
         for (var index = 0; index < args.Length; index += 2)
         {
-            if (args[index] is not ("--data-dir" or "--port" or "--destination" or "--source") ||
+            if (args[index] is not ("--data-dir" or "--port" or "--destination" or "--source" or "--collect") ||
                 !options.TryAdd(args[index], args[index + 1]))
                 throw new ArgumentException("Unknown or duplicate option.");
         }

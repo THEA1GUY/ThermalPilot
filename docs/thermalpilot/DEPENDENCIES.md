@@ -50,6 +50,10 @@ These entries reflect restored package metadata. The SQLite native binary and it
 
 Test-only direct packages are Microsoft.AspNetCore.TestHost 10.0.14, Microsoft.NET.Test.Sdk 18.11.0, xunit 2.9.3 and xunit.runner.visualstudio 4.0.1. Their complete transitive graph/content hashes are in tests/ThermalPilot.Host.Tests/packages.lock.json. Test assemblies/packages are not part of the host publish output. Contracts, host and tests each have committed lockfiles; builds use locked restore.
 
+## TP-02 controller
+
+The controller adds no NuGet PackageReference. It targets net10.0-windows and references only the contracts project, linking the extracted read-only source. Pipe ACLs, native interop and system queries use the .NET shared framework and Windows APIs. Its lockfile contains no external dependencies. No vendor GPU library, driver, Pawn module or embedded binary is added or loaded by this controller.
+
 ## Open release tasks
 
 - Resolve HidSharpCore notices from the precise package/source version.
