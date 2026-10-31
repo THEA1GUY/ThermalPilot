@@ -1,5 +1,6 @@
 using System.Globalization;
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using Microsoft.Data.Sqlite;
 using ThermalPilot.Contracts;
@@ -8,7 +9,7 @@ namespace ThermalPilot.Host;
 
 public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clock)
 {
-    public const int SchemaVersion = 2;
+    public const int SchemaVersion = 4;
     public const int ApplicationId = 0x54504C54;
     public static RetentionPolicy DefaultPolicy { get; } = new(false, 72, 30, 90, 256, false, 0);
 
@@ -65,6 +66,35 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
                     """;
                 migration.ExecuteNonQuery();
             }
+            if (Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture) == 2)
+            {
+                AssertSchema(connection, 2);
+                using var migration = connection.CreateCommand();
+                migration.CommandText = """
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE incidents(id TEXT PRIMARY KEY, marked_at TEXT NOT NULL, document TEXT NOT NULL CHECK(json_valid(document)));
+                    CREATE INDEX incidents_marked_at ON incidents(marked_at);
+                    INSERT INTO schema_migrations VALUES(3, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                    PRAGMA user_version=3;
+                    COMMIT;
+                    """;
+                migration.ExecuteNonQuery();
+            }
+            if (Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture) == 3)
+            {
+                AssertSchema(connection, 3);
+                using var migration = connection.CreateCommand();
+                migration.CommandText = """
+                    BEGIN IMMEDIATE;
+                    CREATE TABLE paired_clients(client_id TEXT PRIMARY KEY,display_name TEXT NOT NULL,token_hash TEXT NOT NULL UNIQUE,
+                        created_at TEXT NOT NULL,revoked_at TEXT NULL);
+                    CREATE INDEX paired_clients_active ON paired_clients(token_hash) WHERE revoked_at IS NULL;
+                    INSERT INTO schema_migrations VALUES(4, strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                    PRAGMA user_version=4;
+                    COMMIT;
+                    """;
+                migration.ExecuteNonQuery();
+            }
             AssertCurrent(connection);
             using var wal = Sql(connection, null, "PRAGMA journal_mode = WAL;");
             if (!string.Equals(Convert.ToString(wal.ExecuteScalar(), CultureInfo.InvariantCulture), "wal", StringComparison.OrdinalIgnoreCase))
@@ -105,14 +135,105 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
         return (IReadOnlyList<AuditEvent>)events;
     });
 
-    public RetentionPolicy GetPolicy() => Run(ReadPolicy);
+    public RetentionPolicy GetPolicy() => Run(connection => ReadPolicy(connection));
 
-    private static RetentionPolicy ReadPolicy(SqliteConnection connection)
+    public RetentionPolicy SetCollectionEnabled(bool enabled) => Run<RetentionPolicy>(connection =>
     {
-        var json = Scalar(connection, null, "SELECT document FROM preferences WHERE key='retention';") as string
+        using var transaction = connection.BeginTransaction(deferred: false);
+        var current = ReadPolicy(connection, transaction);
+        var updated = current with { CollectionEnabled = enabled };
+        using var command = Sql(connection, transaction,
+            "UPDATE preferences SET document=$document WHERE key='retention';",
+            ("$document", JsonSerializer.Serialize(updated, ContractJson.Options)));
+        command.ExecuteNonQuery();
+        AppendEvent(connection, transaction, EventKind.CollectionPreferenceChanged, Guid.Empty, Guid.NewGuid());
+        transaction.Commit();
+        return updated;
+    });
+
+    public IncidentRecord CreateIncident(CreateIncidentRequest request, LiveSnapshot? snapshot)
+    {
+        Validation.Incident(request);
+        var incident = new IncidentRecord(Guid.NewGuid(), request.Note.Trim(), clock.GetUtcNow(),
+            snapshot?.SessionId, snapshot?.Sequence, snapshot?.CapturedAtUtc);
+        return Run(connection =>
+        {
+            using var transaction = connection.BeginTransaction(deferred: false);
+            using var command = Sql(connection, transaction,
+                "INSERT INTO incidents(id,marked_at,document) VALUES($id,$at,$document);",
+                ("$id", incident.Id.ToString("D")), ("$at", incident.MarkedAtUtc.ToString("O")),
+                ("$document", JsonSerializer.Serialize(incident, ContractJson.Options)));
+            command.ExecuteNonQuery();
+            AppendEvent(connection, transaction, EventKind.IncidentMarked, incident.Id, Guid.NewGuid());
+            transaction.Commit();
+            return incident;
+        });
+    }
+
+    public IncidentRecord[] ListIncidents() => Run(connection =>
+    {
+        using var command = Sql(connection, null, "SELECT document FROM incidents ORDER BY marked_at DESC LIMIT 200;");
+        using var reader = command.ExecuteReader();
+        List<IncidentRecord> incidents = [];
+        while (reader.Read()) incidents.Add(Deserialize<IncidentRecord>(reader.GetString(0)));
+        return incidents.ToArray();
+    });
+
+    public PairedClientRecord AddPairedClient(string name, string clientToken)
+    {
+        Validation.PairedClientName(name);
+        if (clientToken.Length < 32) throw new ArgumentException("A high-entropy pairing token is required.", nameof(clientToken));
+        var client = new PairedClientRecord(Guid.NewGuid(), name.Trim(), clock.GetUtcNow(), null);
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(clientToken)));
+        return Run(connection =>
+        {
+            using var transaction = connection.BeginTransaction(deferred: false);
+            using var command = Sql(connection, transaction,
+                "INSERT INTO paired_clients(client_id,display_name,token_hash,created_at) VALUES($id,$name,$hash,$at);",
+                ("$id", client.Id.ToString("D")), ("$name", client.Name), ("$hash", hash), ("$at", client.PairedAtUtc.ToString("O")));
+            command.ExecuteNonQuery();
+            AppendEvent(connection, transaction, EventKind.PhonePaired, client.Id, Guid.NewGuid());
+            transaction.Commit();
+            return client;
+        });
+    }
+
+    public bool IsActivePairedClient(string clientToken)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(clientToken)));
+        return Run(connection => Convert.ToInt64(Scalar(connection, null,
+            "SELECT count(*) FROM paired_clients WHERE token_hash=$hash AND revoked_at IS NULL;", ("$hash", hash)), CultureInfo.InvariantCulture) == 1);
+    }
+
+    public PairedClientRecord[] ListPairedClients() => Run(connection =>
+    {
+        using var command = Sql(connection, null, "SELECT client_id,display_name,created_at,revoked_at FROM paired_clients ORDER BY created_at DESC LIMIT 100;");
+        using var reader = command.ExecuteReader();
+        List<PairedClientRecord> clients = [];
+        while (reader.Read()) clients.Add(new(Guid.Parse(reader.GetString(0)), reader.GetString(1),
+            DateTimeOffset.Parse(reader.GetString(2), CultureInfo.InvariantCulture),
+            reader.IsDBNull(3) ? null : DateTimeOffset.Parse(reader.GetString(3), CultureInfo.InvariantCulture)));
+        return clients.ToArray();
+    });
+
+    public bool RevokePairedClient(Guid id) => Run(connection =>
+    {
+        using var transaction = connection.BeginTransaction(deferred: false);
+        using var command = Sql(connection, transaction,
+            "UPDATE paired_clients SET revoked_at=$at WHERE client_id=$id AND revoked_at IS NULL;",
+            ("$at", clock.GetUtcNow().ToString("O")), ("$id", id.ToString("D")));
+        var changed = command.ExecuteNonQuery() == 1;
+        if (changed) AppendEvent(connection, transaction, EventKind.PhoneRevoked, id, Guid.NewGuid());
+        transaction.Commit();
+        return changed;
+    });
+
+    private static RetentionPolicy ReadPolicy(SqliteConnection connection, SqliteTransaction? transaction = null)
+    {
+        var json = Scalar(connection, transaction, "SELECT document FROM preferences WHERE key='retention';") as string
             ?? throw new InvalidDataException("Retention policy is missing.");
         var policy = Deserialize<RetentionPolicy>(json);
-        if (policy.CollectionEnabled || policy.CloudEnabled || policy.CloudBudget != 0 || policy != DefaultPolicy)
+        if (policy.CloudEnabled || policy.CloudBudget != 0 || (policy with { CollectionEnabled = false }) != DefaultPolicy)
             throw new InvalidDataException("The stored policy is incompatible with this checkpoint.");
         return policy;
     }
@@ -152,7 +273,7 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
     public static void AssertSupported(SqliteConnection connection)
     {
         var version = Convert.ToInt32(Scalar(connection, null, "PRAGMA user_version;"), CultureInfo.InvariantCulture);
-        if (version is not (1 or SchemaVersion)) throw new InvalidDataException("Unsupported backup schema.");
+        if (version is not (1 or 2 or 3 or SchemaVersion)) throw new InvalidDataException("Unsupported backup schema.");
         AssertSchema(connection, version);
     }
 
@@ -170,8 +291,12 @@ public sealed class SqliteStore(ISqliteConnections connections, TimeProvider clo
             """), CultureInfo.InvariantCulture);
         if (tables != 6 || Convert.ToInt64(Scalar(connection, null, "SELECT max(version) FROM schema_migrations;"), CultureInfo.InvariantCulture) != expectedVersion)
             throw new InvalidDataException("The migration ledger is inconsistent.");
-        if (expectedVersion == 2 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('telemetry','telemetry_gaps');") != 2)
+        if (expectedVersion >= 2 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name IN ('telemetry','telemetry_gaps');") != 2)
             throw new InvalidDataException("Telemetry migration is incomplete.");
+        if (expectedVersion >= 3 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='incidents';") != 1)
+            throw new InvalidDataException("Incident migration is incomplete.");
+        if (expectedVersion >= 4 && Count(connection, "SELECT count(*) FROM sqlite_schema WHERE type='table' AND name='paired_clients';") != 1)
+            throw new InvalidDataException("Phone pairing migration is incomplete.");
         ReadPolicy(connection);
     }
 

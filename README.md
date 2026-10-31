@@ -2,7 +2,7 @@
 
 A personal PC monitoring, profiles and automation hub being developed from [G-Helper](https://github.com/seerge/g-helper).
 
-**Status: TP-02 completed, awaiting owner review.** A separate read-only controller supplies actual supported ASUS/Windows readings to the local host and SQLite history. A 30-minute final-version laptop run, 27 tests, real-device reconnect/recovery checks and CI passed. Runtime simulation producers have been removed. Dashboard, phone access, hardware control, schedules, MCP and DeepSeek remain later checkpoints. GPU temperature is currently unavailable; energy impact is inconclusive. No performance improvement is claimed.
+**Status: TP-03 implementation is in progress; Android acceptance is pending.** The dashboard displays real supported ASUS/Windows readings and stored history, with audited collection controls and encrypted phone pairing/revocation. The React build, zero-warning .NET build, 35 API/storage tests, and ASUS-required live telemetry/recovery check passed. Android certificate trust, pairing, revocation, restart history and touch/keyboard checks remain owner acceptance gates. GPU temperature is currently unavailable; energy impact is inconclusive. No performance improvement is claimed.
 
 ## Intended experience
 
