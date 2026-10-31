@@ -92,6 +92,8 @@ Owner acceptance is still required on the actual Android phone: install and trus
 
 Pushed checkpoint: `a1281f965ebbb9efa73660b952730f638c5dd393` on `origin/codex/tp-03-dashboard`, stacked on `codex/tp-02-readonly-telemetry`. Draft PR creation was attempted through the connected GitHub integration but returned HTTP 403 (`Resource not accessible by integration`); the local GitHub CLI credential is expired. No TP-03 PR currently exists. The branch is pushed and remains reviewable directly.
 
+The permanent checkout was synced to this branch. Its dashboard build passed, but the .NET build stopped before tests/sensor checks because Windows denied writes to ignored `obj` cache files (`MSB3491`/`UnauthorizedAccessException`), including on retry with elevated execution. The full ASUS-required build/test/recovery run passed in the isolated implementation checkout above; no permanent-checkout pass is claimed.
+
 ## Next owner gate
 
 Review TP-02/[PR #4](https://github.com/THEA1GUY/ThermalPilot/pull/4) and the pushed TP-03 branch. Create a TP-03 pull request after GitHub write access is restored; then complete the Android phone acceptance before approving TP-03. No TP-04 work may start until TP-03 is accepted. No simulated measurement, simulated actuation or synthetic report may stand in for actual device evidence.
