@@ -12,12 +12,17 @@ type Activity = { sequence: number; correlationId: string; kind: string; actor: 
 type Health = { bridge?: string; collection?: boolean; storage?: string; lastSnapshotAtUtc?: string | null; lastError?: string | null };
 type Policy = { storedDefaults: { rawHours: number; aggregateDays: number; reportDays: number; telemetryBudgetMiB: number }; effectiveCollectionEnabled: boolean; cloudEnabled: boolean; rawMaximumRows: number; rawMaximumHours: number };
 type Client = { id: string; name: string; pairedAtUtc: string; revokedAtUtc: string | null };
+type ProfileMode = "silent" | "balanced" | "turbo";
+type Profile = { id: string; name: string; baseMode: ProfileMode; version: number; createdAtUtc: string };
+type ProfileVersion = { profileId: string; version: number; baseMode: ProfileMode; createdAtUtc: string };
+type ProfileArchive = { formatVersion: number; name: string; baseMode: ProfileMode };
+type ProfilePreview = { profile: Profile; canActivate: boolean; hardwareWritesEnabled: boolean; reasonCode: string; explanation: string };
 type HostStatus = { phoneAccessEnabled: boolean };
 type PairingCode = { code: string; expiresAtUtc: string; phonePort: number; hostAddresses: string[] };
 type PairingSession = { clientToken: string; client: Client };
-type DashboardData = { snapshot: Snapshot | null; health: Health | null; history: Snapshot[]; incidents: Incident[]; reports: Report[]; events: Activity[]; policy: Policy | null; clients: Client[]; status: HostStatus | null; errors: string[] };
+type DashboardData = { snapshot: Snapshot | null; health: Health | null; history: Snapshot[]; incidents: Incident[]; reports: Report[]; events: Activity[]; policy: Policy | null; clients: Client[]; profiles: Profile[]; status: HostStatus | null; errors: string[] };
 
-const emptyData: DashboardData = { snapshot: null, health: null, history: [], incidents: [], reports: [], events: [], policy: null, clients: [], status: null, errors: [] };
+const emptyData: DashboardData = { snapshot: null, health: null, history: [], incidents: [], reports: [], events: [], policy: null, clients: [], profiles: [], status: null, errors: [] };
 const sensor = (snapshot: Snapshot | null, id: string): Reading | undefined => snapshot?.sensors.find((reading) => reading.id === id);
 const readingText = (reading: Reading | undefined): string => reading?.value === null || reading?.value === undefined ? reading ? `${reading.quality === "unsupported" ? "Unsupported" : "Unavailable"} · ${reading.quality}` : "No sample" : `${reading.value.toFixed(reading.unit === "°C" ? 1 : 0)} ${reading.unit}${reading.quality === "stale" ? " · stale" : ""}`;
 const readingStatus = (reading: Reading | undefined): string => reading ? `${reading.quality} · ${stamp(reading.sampledAtUtc)}` : "no sample";
@@ -27,6 +32,8 @@ const isReading = (value: unknown): value is Reading => objectValue(value) && ty
 const isSnapshot = (value: unknown): value is Snapshot => objectValue(value) && typeof value.sessionId === "string" && typeof value.sequence === "number" && typeof value.capturedAtUtc === "string" && Array.isArray(value.sensors) && value.sensors.every(isReading) && typeof value.isSynthetic === "boolean";
 const isIncident = (value: unknown): value is Incident => objectValue(value) && typeof value.id === "string" && typeof value.note === "string" && typeof value.markedAtUtc === "string" && (typeof value.sessionId === "string" || value.sessionId === null) && (typeof value.snapshotSequence === "number" || value.snapshotSequence === null) && (typeof value.snapshotCapturedAtUtc === "string" || value.snapshotCapturedAtUtc === null);
 const isActivity = (value: unknown): value is Activity => objectValue(value) && typeof value.sequence === "number" && typeof value.correlationId === "string" && typeof value.kind === "string" && typeof value.actor === "string" && typeof value.entityId === "string" && typeof value.createdAtUtc === "string";
+const isProfileMode = (value: unknown): value is ProfileMode => value === "silent" || value === "balanced" || value === "turbo";
+const isProfile = (value: unknown): value is Profile => objectValue(value) && typeof value.id === "string" && typeof value.name === "string" && isProfileMode(value.baseMode) && typeof value.version === "number" && typeof value.createdAtUtc === "string";
 const isHealth = (value: unknown): value is Health => objectValue(value) && (typeof value.bridge === "string" || value.bridge === undefined) && (typeof value.storage === "string" || value.storage === undefined);
 const isPolicy = (value: unknown): value is Policy => objectValue(value) && typeof value.effectiveCollectionEnabled === "boolean" && typeof value.cloudEnabled === "boolean" && typeof value.rawMaximumRows === "number" && typeof value.rawMaximumHours === "number";
 const isPairedClient = (value: unknown): value is Client => objectValue(value) && typeof value.id === "string" && typeof value.name === "string" && typeof value.pairedAtUtc === "string" && (typeof value.revokedAtUtc === "string" || value.revokedAtUtc === null);
@@ -96,6 +103,13 @@ function App() {
   const [phonePort, setPhonePort] = useState(5128);
   const [selectedPhoneAddress, setSelectedPhoneAddress] = useState("");
   const [collectionError, setCollectionError] = useState("");
+  const [profileName, setProfileName] = useState("");
+  const [profileMode, setProfileMode] = useState<ProfileMode>("balanced");
+  const [profileError, setProfileError] = useState("");
+  const [profileNotice, setProfileNotice] = useState("");
+  const [profileBusy, setProfileBusy] = useState(false);
+  const [profileVersions, setProfileVersions] = useState<Record<string, ProfileVersion[]>>({});
+  const [profilePreviews, setProfilePreviews] = useState<Record<string, ProfilePreview>>({});
   const generation = useRef(0);
   const refreshInProgress = useRef(false);
   const activeRequest = useRef<AbortController | null>(null);
@@ -115,7 +129,7 @@ function App() {
     const controller = new AbortController();
     activeRequest.current = controller;
     setLoading(true);
-    const paths = ["/v1/telemetry", "/v1/telemetry/health", `/v1/telemetry/range?hours=${hours}`, "/v1/incidents", "/v1/reports", "/v1/events", "/v1/policy", "/v1/status"] as const;
+    const paths = ["/v1/telemetry", "/v1/telemetry/health", `/v1/telemetry/range?hours=${hours}`, "/v1/incidents", "/v1/reports", "/v1/events", "/v1/policy", "/v1/status", "/v1/profiles"] as const;
     try {
       const results = await Promise.allSettled(paths.map((path) => api<unknown>(path, token, { signal: controller.signal })));
       if (requestGeneration !== generation.current) return;
@@ -124,6 +138,8 @@ function App() {
         setToken("");
         setIsOwner(false);
         setData(emptyData);
+        setProfileVersions({});
+        setProfilePreviews({});
         setLoginError("Access token expired or was rejected. Sign in again.");
         return;
       }
@@ -151,6 +167,7 @@ function App() {
       const eventsValue = value<unknown>(5, "Activity", []);
       const healthValue = value<unknown>(1, "Health", null);
       const policyValue = value<unknown>(6, "Preferences", null);
+      const profileValue = value<unknown>(8, "Profiles", []);
       setData({
         snapshot,
         health: isHealth(healthValue) ? healthValue : null,
@@ -160,6 +177,7 @@ function App() {
         events: Array.isArray(eventsValue) ? eventsValue.filter(isActivity) : [],
         policy: isPolicy(policyValue) ? policyValue : null,
         clients,
+        profiles: Array.isArray(profileValue) ? profileValue.filter(isProfile) : [],
         status,
         errors,
       });
@@ -288,6 +306,10 @@ function App() {
     setIsOwner(false);
     setToken("");
     setData(emptyData);
+    setProfileVersions({});
+    setProfilePreviews({});
+      setProfileVersions({});
+      setProfilePreviews({});
   };
 
   const markIncident = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -311,6 +333,70 @@ function App() {
     } catch (error) {
       setCollectionError(error instanceof Error ? error.message : "Collection preference could not be saved.");
     }
+  };
+
+  const createProfile = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setProfileError(""); setProfileNotice(""); setProfileBusy(true);
+    try {
+      await api<Profile>("/v1/profiles", token, { method: "POST", body: JSON.stringify({ name: profileName, baseMode: profileMode }) });
+      setProfileName(""); setProfileNotice("Profile saved. It has not been applied to the laptop."); await refresh();
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile could not be saved."); }
+    finally { setProfileBusy(false); }
+  };
+
+  const cloneProfile = async (profile: Profile) => {
+    setProfileError(""); setProfileNotice("");
+    try {
+      await api<Profile>(`/v1/profiles/${profile.id}/clone`, token, { method: "POST", body: JSON.stringify({ name: `${profile.name} copy`.slice(0, 80) }) });
+      setProfileNotice(`Saved a separate copy of “${profile.name}”.`); await refresh();
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile could not be cloned."); }
+  };
+
+  const createProfileVersion = async (profile: Profile, baseMode: ProfileMode) => {
+    setProfileError(""); setProfileNotice("");
+    try {
+      await api<Profile>(`/v1/profiles/${profile.id}/versions`, token, { method: "POST", body: JSON.stringify({ baseMode }) });
+      setProfileNotice(`Saved version ${profile.version + 1} of “${profile.name}”.`); await refresh(); await loadProfileVersions(profile);
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile version could not be saved."); }
+  };
+
+  const loadProfileVersions = async (profile: Profile) => {
+    try {
+      const items = await api<unknown>(`/v1/profiles/${profile.id}/versions`, token);
+      if (Array.isArray(items)) setProfileVersions((current) => ({ ...current, [profile.id]: items.filter((item): item is ProfileVersion => objectValue(item) && item.profileId === profile.id && typeof item.version === "number" && isProfileMode(item.baseMode) && typeof item.createdAtUtc === "string") }));
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile history is unavailable."); }
+  };
+
+  const previewProfile = async (profile: Profile) => {
+    setProfileError("");
+    try {
+      const preview = await api<unknown>(`/v1/profiles/${profile.id}/activation-preview`, token);
+      if (!objectValue(preview) || !isProfile(preview.profile) || typeof preview.canActivate !== "boolean" || typeof preview.hardwareWritesEnabled !== "boolean" || typeof preview.reasonCode !== "string" || typeof preview.explanation !== "string") throw new Error("The host returned an invalid profile preview.");
+      setProfilePreviews((current) => ({ ...current, [profile.id]: preview as unknown as ProfilePreview }));
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile preview is unavailable."); }
+  };
+
+  const exportProfile = async (profile: Profile) => {
+    setProfileError("");
+    try {
+      const archive = await api<unknown>(`/v1/profiles/${profile.id}/export`, token);
+      const blob = new Blob([JSON.stringify(archive, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a"); link.href = url; link.download = `${profile.name.replace(/[^a-z0-9-_]+/gi, "-").replace(/^-|-$/g, "") || "profile"}.thermalpilot-profile.json`; link.click(); URL.revokeObjectURL(url);
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile could not be exported."); }
+  };
+
+  const importProfile = async (file: File | undefined) => {
+    if (!file) return;
+    setProfileError(""); setProfileNotice(""); setProfileBusy(true);
+    try {
+      const parsed: unknown = JSON.parse(await file.text());
+      if (!objectValue(parsed) || parsed.formatVersion !== 1 || typeof parsed.name !== "string" || !isProfileMode(parsed.baseMode) || Object.keys(parsed).some((key) => !["formatVersion", "name", "baseMode"].includes(key))) throw new Error("This is not a supported ThermalPilot profile file.");
+      await api<Profile>("/v1/profiles/import", token, { method: "POST", body: JSON.stringify(parsed as ProfileArchive) });
+      setProfileNotice("Profile imported as a new saved profile. It has not been applied to the laptop."); await refresh();
+    } catch (error) { setProfileError(error instanceof Error ? error.message : "Profile could not be imported."); }
+    finally { setProfileBusy(false); }
   };
 
   const live = data.snapshot;
@@ -338,7 +424,7 @@ function App() {
   return <div className="app-shell">
     <aside className="sidebar">
       <div className="brand"><div className="brand-mark">TP</div><div><strong>ThermalPilot</strong><span>PC operations hub</span></div></div>
-      <nav aria-label="Main navigation"><a href="#overview" className="active">Overview</a><a href="#history">History</a><a href="#incidents">Incidents</a><a href="#activity">Activity</a><a href="#preferences">Preferences</a></nav>
+      <nav aria-label="Main navigation"><a href="#overview" className="active">Overview</a><a href="#profiles">Profiles</a><a href="#history">History</a><a href="#incidents">Incidents</a><a href="#activity">Activity</a><a href="#preferences">Preferences</a></nav>
       <div className="sidebar-footer"><span className="dot online" /> Local host connection<br /><span className="small-muted">Phone access {data.status?.phoneAccessEnabled ? "ready" : "disabled"}</span></div>
     </aside>
     <main className="main-content">
@@ -350,6 +436,12 @@ function App() {
         <article className="metric-card"><span className="metric-icon fan-icon">◌</span><p>CPU fan</p><strong>{readingText(sensor(live, "cpuFanRpm"))}</strong><span className="quality">{readingStatus(sensor(live, "cpuFanRpm"))} · RPM, not PWM percent</span></article>
         <article className="metric-card"><span className="metric-icon">▤</span><p>GPU temperature</p><strong>{readingText(sensor(live, "gpuTemperature"))}</strong><span className="quality">{sensor(live, "gpuTemperature")?.quality ?? "no sample"}</span></article>
         <article className="metric-card"><span className="metric-icon">ϟ</span><p>Battery rate</p><strong>{readingText(sensor(live, "batteryRateWatts"))}</strong><span className="quality">{readingStatus(sensor(live, "batteryRateWatts"))} · negative = discharge</span></article>
+      </section>
+
+      <section id="profiles" className="section-block"><div className="section-heading"><div><p className="eyebrow">SAVED CONFIGURATIONS</p><h2>Profiles</h2><p className="muted">Create, version, import and export profile definitions. Hardware activation remains disabled.</p></div>{isOwner && <label className="quiet-button import-profile">Import profile<input type="file" accept="application/json,.json" disabled={profileBusy} onChange={(event) => { void importProfile(event.target.files?.[0]); event.currentTarget.value = ""; }} hidden /></label>}</div>
+        {profileError && <div className="form-error" role="alert">{profileError}</div>}{profileNotice && <div className="profile-notice" role="status">{profileNotice}</div>}
+        {isOwner && <form className="profile-create panel" onSubmit={(event) => void createProfile(event)}><div><label htmlFor="profile-name">Profile name</label><input id="profile-name" value={profileName} maxLength={80} onChange={(event) => setProfileName(event.target.value)} required /></div><div><label htmlFor="profile-mode">Base mode</label><select id="profile-mode" value={profileMode} onChange={(event) => setProfileMode(event.target.value as ProfileMode)}><option value="silent">Silent</option><option value="balanced">Balanced</option><option value="turbo">Turbo</option></select></div><button className="primary-button" type="submit" disabled={profileBusy}>{profileBusy ? "Saving…" : "Save profile"}</button></form>}
+        <div className="profile-grid">{data.profiles.map((profile) => <article className="panel saved-profile" key={profile.id}><div className="panel-heading"><div><p className="eyebrow">VERSION {profile.version}</p><h3>{profile.name}</h3></div><span className="badge">{profile.baseMode}</span></div><p className="profile-date">Saved {stamp(profile.createdAtUtc)}</p><div className="profile-actions">{isOwner && <><button className="quiet-button" onClick={() => void cloneProfile(profile)}>Clone</button><button className="quiet-button" onClick={() => void exportProfile(profile)}>Export</button><button className="quiet-button" onClick={() => void previewProfile(profile)}>Preview</button></>}<button className="quiet-button" onClick={() => void loadProfileVersions(profile)}>History</button></div>{isOwner && <div className="profile-version-form"><label htmlFor={`next-mode-${profile.id}`}>Save next version</label><select id={`next-mode-${profile.id}`} value={profile.baseMode} onChange={(event) => void createProfileVersion(profile, event.target.value as ProfileMode)}><option value={profile.baseMode}>{profile.baseMode} (current)</option>{(["silent", "balanced", "turbo"] as const).filter((mode) => mode !== profile.baseMode).map((mode) => <option value={mode} key={mode}>{mode}</option>)}</select></div>}{profileVersions[profile.id] && <div className="profile-history">{profileVersions[profile.id].map((version) => <span key={version.version}>v{version.version} · {version.baseMode} · {stamp(version.createdAtUtc)}</span>)}</div>}{profilePreviews[profile.id] && <div className="profile-preview"><strong>Activation unavailable</strong><span>{profilePreviews[profile.id].explanation}</span></div>}</article>)}{data.profiles.length === 0 && <div className="empty-state panel">No saved profiles yet. Create one when signed in as the owner.</div>}</div>
       </section>
 
       <section id="history" className="section-block"><div className="section-heading"><div><p className="eyebrow">OBSERVATIONS</p><h2>Trends and history</h2><p className="muted">Only fresh stored points are plotted. Missing samples stay missing.</p></div><div className="select-group"><label htmlFor="range">Period</label><select id="range" value={hours} onChange={(event) => setHours(Number(event.target.value))}><option value={1}>Last hour</option><option value={6}>Last 6 hours</option><option value={24}>Last 24 hours</option><option value={72}>Last 72 hours</option></select></div></div>

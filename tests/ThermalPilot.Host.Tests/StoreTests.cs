@@ -15,8 +15,32 @@ public sealed class StoreTests
         var profile = workspace.Store().CreateProfile(new("Coding", ProfileMode.Balanced));
         var reopened = workspace.Store();
         Assert.Equal(profile, reopened.GetProfile(profile.Id));
-        Assert.Equal(new StoreSummary(4, 1, 0, 0, 1), reopened.Summary());
+        Assert.Equal(new StoreSummary(5, 1, 0, 0, 1), reopened.Summary());
         Assert.Single(reopened.ListEvents());
+        Assert.Equal(new ProfileVersionRecord(profile.Id, 1, profile.BaseMode, profile.CreatedAtUtc), Assert.Single(reopened.ListProfileVersions(profile.Id)));
+    }
+
+    [Fact]
+    public void Profile_clone_and_versions_persist_as_distinct_saved_records()
+    {
+        using var workspace = new TestWorkspace();
+        var store = workspace.Store();
+        var original = store.CreateProfile(new("Call", ProfileMode.Silent));
+        var clone = Assert.IsType<ProfileRecord>(store.CloneProfile(original.Id, new("Gaming")));
+        Assert.NotEqual(original.Id, clone.Id);
+        Assert.Equal(ProfileMode.Silent, clone.BaseMode);
+        Assert.Equal(1, clone.Version);
+
+        var versionTwo = Assert.IsType<ProfileRecord>(store.CreateProfileVersion(original.Id, new(ProfileMode.Balanced)));
+        Assert.Equal(2, versionTwo.Version);
+        Assert.Equal(ProfileMode.Silent, store.GetProfile(clone.Id)!.BaseMode);
+        Assert.Equal(new[] { ProfileMode.Silent, ProfileMode.Balanced }, store.ListProfileVersions(original.Id).Select(version => version.BaseMode));
+        Assert.Throws<RequestFailure>(() => store.CreateProfileVersion(original.Id, new(ProfileMode.Balanced)));
+
+        var reopened = workspace.Store();
+        Assert.Equal(versionTwo, reopened.GetProfile(original.Id));
+        Assert.Equal(2, reopened.ListProfileVersions(original.Id).Count);
+        Assert.Equal(3, reopened.Summary().Events);
     }
 
     [Theory]
@@ -100,12 +124,13 @@ public sealed class StoreTests
         using (var connection = new SqliteConnections(workspace.PathFor("data")).Open())
         {
             using var sql = connection.CreateCommand();
-            sql.CommandText = "DROP TABLE paired_clients; DROP TABLE incidents; DROP TABLE telemetry; DROP TABLE telemetry_gaps; DELETE FROM schema_migrations WHERE version>1; PRAGMA user_version=1;";
+            sql.CommandText = "DROP TABLE profile_versions; DROP TABLE paired_clients; DROP TABLE incidents; DROP TABLE telemetry; DROP TABLE telemetry_gaps; DELETE FROM schema_migrations WHERE version>1; PRAGMA user_version=1;";
             sql.ExecuteNonQuery();
         }
         var backup = Path.Combine(workspace.PathFor("data"), "thermalpilot.db");
-        Assert.Equal(4, DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored")).SchemaVersion);
+        Assert.Equal(5, DatabaseMaintenance.RestoreToNewDirectory(backup, workspace.PathFor("restored")).SchemaVersion);
         Assert.Equal(profile, workspace.Store("restored").GetProfile(profile.Id));
+        Assert.Equal(profile.BaseMode, Assert.Single(workspace.Store("restored").ListProfileVersions(profile.Id)).BaseMode);
         using var original = new SqliteConnections(workspace.PathFor("data")).Open();
         using var check = original.CreateCommand();
         check.CommandText = "PRAGMA user_version;";

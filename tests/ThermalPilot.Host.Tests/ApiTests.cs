@@ -64,7 +64,7 @@ public sealed class ApiTests
         using var workspace = new TestWorkspace();
         await using var hub = await RunningHub.Start(workspace.PathFor("dashboard"));
         var status = await hub.Client.GetFromJsonAsync<HostStatus>("/v1/status", ContractJson.Options);
-        Assert.Equal(4, status!.SchemaVersion);
+        Assert.Equal(5, status!.SchemaVersion);
         Assert.Empty((await hub.Client.GetFromJsonAsync<LiveSnapshot[]>("/v1/telemetry/range?hours=1", ContractJson.Options))!);
         Assert.Equal(HttpStatusCode.BadRequest, (await hub.Client.GetAsync("/v1/telemetry/range?hours=2")).StatusCode);
 
@@ -102,6 +102,8 @@ public sealed class ApiTests
         hub.Client.DefaultRequestHeaders.Authorization = new("Bearer", phoneToken);
         Assert.Equal(HttpStatusCode.OK, (await hub.Client.GetAsync("/v1/status")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await hub.Client.PostAsJsonAsync("/v1/profiles", new CreateProfileRequest("Unsafe", ProfileMode.Balanced), ContractJson.Options)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await hub.Client.PostAsJsonAsync("/v1/profiles/import", new ProfileArchive(1, "Unsafe", ProfileMode.Balanced), ContractJson.Options)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await hub.Client.PostAsJsonAsync("/v1/profiles/00000000-0000-0000-0000-000000000001/clone", new CloneProfileRequest("Unsafe"), ContractJson.Options)).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await hub.Client.GetAsync("/v1/pairing/clients")).StatusCode);
         Assert.Equal(HttpStatusCode.Created, (await hub.Client.PostAsJsonAsync("/v1/incidents", new CreateIncidentRequest("Phone observation"), ContractJson.Options)).StatusCode);
         Assert.True(store.RevokePairedClient(client.Id));
@@ -161,6 +163,55 @@ public sealed class ApiTests
         await using var second = await RunningHub.Start(workspace.PathFor("api"));
         Assert.Equal(profile, await second.Client.GetFromJsonAsync<ProfileRecord>("/v1/profiles/" + profile.Id, ContractJson.Options));
         Assert.Equal(HttpStatusCode.ServiceUnavailable, (await second.Client.GetAsync("/v1/telemetry")).StatusCode);
+    }
+
+    [Fact]
+    public async Task Profiles_can_be_cloned_versioned_exported_and_imported_without_hardware_activation()
+    {
+        using var workspace = new TestWorkspace();
+        await using var hub = await RunningHub.Start(workspace.PathFor("profiles"));
+        var create = await hub.Client.PostAsJsonAsync("/v1/profiles", new CreateProfileRequest("Call", ProfileMode.Silent), ContractJson.Options);
+        Assert.Equal(HttpStatusCode.Created, create.StatusCode);
+        var original = (await create.Content.ReadFromJsonAsync<ProfileRecord>(ContractJson.Options))!;
+
+        var preview = await hub.Client.GetFromJsonAsync<ProfileActivationPreview>($"/v1/profiles/{original.Id}/activation-preview", ContractJson.Options);
+        Assert.False(preview!.CanActivate);
+        Assert.False(preview.HardwareWritesEnabled);
+        Assert.Equal("single_writer_coordinator_required", preview.ReasonCode);
+        Assert.Empty((await hub.Client.GetFromJsonAsync<CommandRecord[]>("/v1/commands", ContractJson.Options))!);
+
+        var cloneResponse = await hub.Client.PostAsJsonAsync($"/v1/profiles/{original.Id}/clone", new CloneProfileRequest("Presentation"), ContractJson.Options);
+        Assert.Equal(HttpStatusCode.Created, cloneResponse.StatusCode);
+        var clone = (await cloneResponse.Content.ReadFromJsonAsync<ProfileRecord>(ContractJson.Options))!;
+        Assert.NotEqual(original.Id, clone.Id);
+        Assert.Equal(ProfileMode.Silent, clone.BaseMode);
+
+        var versionResponse = await hub.Client.PostAsJsonAsync($"/v1/profiles/{original.Id}/versions", new CreateProfileVersionRequest(ProfileMode.Balanced), ContractJson.Options);
+        Assert.Equal(HttpStatusCode.OK, versionResponse.StatusCode);
+        var versionTwo = (await versionResponse.Content.ReadFromJsonAsync<ProfileRecord>(ContractJson.Options))!;
+        Assert.Equal(2, versionTwo.Version);
+        Assert.Equal(2, (await hub.Client.GetFromJsonAsync<ProfileVersionRecord[]>($"/v1/profiles/{original.Id}/versions", ContractJson.Options))!.Length);
+
+        var export = await hub.Client.GetFromJsonAsync<ProfileArchive>($"/v1/profiles/{original.Id}/export", ContractJson.Options);
+        Assert.Equal(new ProfileArchive(1, "Call", ProfileMode.Balanced), export);
+        var importResponse = await hub.Client.PostAsJsonAsync("/v1/profiles/import", export, ContractJson.Options);
+        Assert.Equal(HttpStatusCode.Created, importResponse.StatusCode);
+        var imported = (await importResponse.Content.ReadFromJsonAsync<ProfileRecord>(ContractJson.Options))!;
+        Assert.NotEqual(original.Id, imported.Id);
+        Assert.Equal(ProfileMode.Balanced, imported.BaseMode);
+        Assert.Empty((await hub.Client.GetFromJsonAsync<CommandRecord[]>("/v1/commands", ContractJson.Options))!);
+    }
+
+    [Fact]
+    public async Task Profile_archive_rejects_unknown_format_and_extra_command_fields()
+    {
+        using var workspace = new TestWorkspace();
+        await using var hub = await RunningHub.Start(workspace.PathFor("profile-import-validation"));
+        using var unknownFormat = new StringContent("""{"formatVersion":2,"name":"Unsafe","baseMode":"balanced"}""", System.Text.Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.BadRequest, (await hub.Client.PostAsync("/v1/profiles/import", unknownFormat)).StatusCode);
+        using var unsafeMode = new StringContent("""{"formatVersion":1,"name":"Unsafe","baseMode":"balanced","mode_command":"anything"}""", System.Text.Encoding.UTF8, "application/json");
+        Assert.Equal(HttpStatusCode.BadRequest, (await hub.Client.PostAsync("/v1/profiles/import", unsafeMode)).StatusCode);
+        Assert.Empty((await hub.Client.GetFromJsonAsync<ProfileRecord[]>("/v1/profiles", ContractJson.Options))!);
     }
     [Fact]
     public void Fake_adapter_or_missing_token_is_rejected_before_startup()
